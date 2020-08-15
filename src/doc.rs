@@ -1,5 +1,7 @@
 use std::convert::TryFrom;
 
+// TODO MMG get rid of usize, since too many things go temporarily negative.
+
 /// Documents. `A` is the type of annotations.
 ///
 /// Here are the invariants:
