@@ -85,8 +85,16 @@ impl<A: Clone> OpenSpan<A> {
 ////////////////////////////////////////////////////////////////////////////////
 // Rendering
 
+impl<A: Clone> std::fmt::Display for Doc<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (s, _) = self.render(&Style::default());
+
+        write!(f, "{}", s)
+    }
+}
+
 impl<A: Clone> Doc<A> {
-    pub fn render(self, style: &Style) -> (String, Vec<Span<A>>) {
+    pub fn render(&self, style: &Style) -> (String, Vec<Span<A>>) {
         // this is offset _from the end_
         let mut offset: usize = 0;
         let mut stack: Vec<OpenSpan<A>> = Vec::new();
@@ -102,11 +110,11 @@ impl<A: Clone> Doc<A> {
             }
             Annot::End(annotation) => stack.push(OpenSpan {
                 end: offset,
-                annotation,
+                annotation: annotation.clone(),
             }),
             Annot::Text(txt, len) => {
                 offset += len;
-                output.push((txt, len));
+                output.push((txt.clone(), *len));
             }
         });
 
@@ -132,7 +140,7 @@ impl<A: Clone> Doc<A> {
         (rendered, spans)
     }
 
-    pub fn render_annotated<F>(self, style: &Style, ann_start: &mut F, ann_end: &mut F) -> String
+    pub fn render_annotated<F>(&self, style: &Style, ann_start: &mut F, ann_end: &mut F) -> String
     where
         F: FnMut(&A) -> &str,
     {
@@ -152,11 +160,11 @@ impl<A: Clone> Doc<A> {
             Annot::End(annotation) => {
                 let s = ann_end(&annotation);
                 output.push((s.into(), s.len()));
-                stack.push(annotation);
+                stack.push(annotation.clone());
             }
             Annot::Text(txt, len) => {
                 offset += len;
-                output.push((txt, len));
+                output.push((txt.clone(), *len));
             }
         });
 
@@ -183,9 +191,9 @@ impl<A: Clone> Doc<A> {
     ///
     /// Implemented by the more general `full_render_ann`, which looks at all
     /// annotations. This version looks only at `Annot::Text`.
-    pub fn full_render<F>(self, style: &Style, txt: &mut F)
+    pub fn full_render<F>(&self, style: &Style, txt: &mut F)
     where
-        F: FnMut(Text) -> (),
+        F: FnMut(&Text) -> (),
     {
         self.full_render_ann(style, &mut |ann| match ann {
             Annot::Text(s, _) => txt(s),
@@ -199,19 +207,15 @@ impl<A: Clone> Doc<A> {
     ///
     /// Traversal is in reverse: later parts of the string are processed first,
     /// with `Annot::Start` coming _after_ `Annot::End`.
-    pub fn full_render_ann<F>(self, style: &Style, txt: &mut F)
+    pub fn full_render_ann<F>(&self, style: &Style, txt: &mut F)
     where
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
+        // OPT MMG ugh, this clone :(
+        let doc = self.0.clone().reduce();
         match style.mode {
-            Mode::OneLine => self
-                .0
-                .reduce()
-                .easy_display(Annot::space(), &|_d1, d2| d2, txt),
-            Mode::Left => self
-                .0
-                .reduce()
-                .easy_display(Annot::newline(), &D::first, txt),
+            Mode::OneLine => doc.easy_display(Annot::space(), Policy::Second, txt),
+            Mode::Left => doc.easy_display(Annot::newline(), Policy::First, txt),
             Mode::Page | Mode::ZigZag => {
                 let line_length = match style.mode {
                     Mode::ZigZag => usize::MAX,
@@ -220,31 +224,41 @@ impl<A: Clone> Doc<A> {
                 let ribbon_length: usize =
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as usize;
 
-                self.0
-                    .reduce()
-                    .best(line_length, ribbon_length)
+                doc.best(line_length, ribbon_length)
                     .display(style, ribbon_length, txt)
             }
         }
     }
 }
 
+#[derive(Clone, Copy)]
+enum Policy {
+    First,
+    Second,
+}
+
 impl<A: Clone> D<A> {
-    pub fn easy_display<C, F>(self, nl_space: Annot<A>, choose: &C, txt: &mut F)
+    fn easy_display<F>(&self, nl_space: Annot<A>, policy: Policy, txt: &mut F)
     where
-        C: Fn(Self, Self) -> Self,
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
         match self {
-            D::Union(d1, d2) => choose(*d1, *d2).easy_display(nl_space, choose, txt),
-            D::Nest(_, d) => d.easy_display(nl_space, choose, txt),
+            D::Union(d1, d2) => {
+                let choice = match policy {
+                    Policy::First => D::first(d1, d2),
+                    Policy::Second => d2,
+                };
+
+                choice.easy_display(nl_space, policy, txt)
+            }
+            D::Nest(_, d) => d.easy_display(nl_space, policy, txt),
             D::Empty => (),
             D::NilAbove(d) => {
-                d.easy_display(nl_space.clone(), choose, txt);
-                txt(nl_space);
+                d.easy_display(nl_space.clone(), policy, txt);
+                txt(&nl_space);
             }
             D::TextBeside(ann, d) => {
-                d.easy_display(nl_space, choose, txt);
+                d.easy_display(nl_space, policy, txt);
                 txt(ann);
             }
             D::Above(..) => panic!("easy_display on Above"),
@@ -253,9 +267,9 @@ impl<A: Clone> D<A> {
         }
     }
 
-    pub fn display<F>(self, style: &Style, ribbon_length: usize, txt: &mut F)
+    pub fn display<F>(&self, style: &Style, ribbon_length: usize, txt: &mut F)
     where
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
         let gap_width = style.line_length - ribbon_length;
         let shift = gap_width / 2;
@@ -263,42 +277,42 @@ impl<A: Clone> D<A> {
         self.lay(style, gap_width, shift, 0, txt)
     }
 
-    fn lay<F>(self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
+    fn lay<F>(&self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
     where
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
         match self {
             D::Nest(k1, d) => d.lay(
                 style,
                 gap_width,
                 shift,
-                k + usize::try_from(k1).expect("positive"),
+                k + usize::try_from(*k1).expect("positive"),
                 txt,
             ),
             D::Empty => (),
             D::NilAbove(d) => {
                 d.lay(style, gap_width, shift, k, txt);
-                txt(Annot::newline());
+                txt(&Annot::newline());
             }
             D::TextBeside(ann, d) => match style.mode {
                 Mode::ZigZag => {
                     if k >= gap_width {
                         d.lay1(style, gap_width, shift, k - shift, ann, txt);
-                        txt(Annot::newline());
-                        txt(Annot::Text(
+                        txt(&Annot::newline());
+                        txt(&Annot::Text(
                             Text::Str(std::iter::repeat('/').take(shift).collect()),
                             shift,
                         ));
 
-                        txt(Annot::newline())
+                        txt(&Annot::newline())
                     } else {
                         d.lay1(style, gap_width, shift, k + shift, ann, txt);
-                        txt(Annot::newline());
-                        txt(Annot::Text(
+                        txt(&Annot::newline());
+                        txt(&Annot::Text(
                             Text::Str(std::iter::repeat('\\').take(shift).collect()),
                             shift,
                         ));
-                        txt(Annot::newline());
+                        txt(&Annot::newline());
                     }
                 }
                 _ => d.lay1(style, gap_width, shift, k, ann, txt),
@@ -311,29 +325,29 @@ impl<A: Clone> D<A> {
     }
 
     fn lay1<F>(
-        self,
+        &self,
         style: &Style,
         gap_width: usize,
         shift: usize,
         k: usize,
-        ann: Annot<A>,
+        ann: &Annot<A>,
         txt: &mut F,
     ) where
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
         self.lay2(style, gap_width, shift, k + ann.size(), txt);
         txt(ann);
-        txt(Annot::indent(k));
+        txt(&Annot::indent(k));
     }
 
-    fn lay2<F>(self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
+    fn lay2<F>(&self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
     where
-        F: FnMut(Annot<A>) -> (),
+        F: FnMut(&Annot<A>) -> (),
     {
         match self {
             D::NilAbove(d) => {
                 d.lay(style, gap_width, shift, k, txt);
-                txt(Annot::newline());
+                txt(&Annot::newline());
             }
             D::TextBeside(ann, d) => {
                 d.lay2(style, gap_width, shift, k + ann.size(), txt);
@@ -357,13 +371,11 @@ impl<A: Clone> D<A> {
                 let size = ann.size();
                 D::TextBeside(ann, Box::new(d.best1(line_length, ribbon_length, size)))
             }
-            D::Nest(i, d) => D::Nest(
-                i,
-                Box::new(d.best(
-                    line_length - usize::try_from(i).expect("positive indent"),
-                    ribbon_length,
-                )),
-            ),
+            D::Nest(i, d) => {
+                let indent = line_length as isize - i;
+                assert!(indent >= 0, "positive indent");                
+                D::Nest(i, Box::new(d.best(indent as usize, ribbon_length)))
+            }
             D::Union(d1, d2) => D::nicest(
                 d1.best(line_length, ribbon_length),
                 d2.best(line_length, ribbon_length),

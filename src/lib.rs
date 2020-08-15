@@ -56,7 +56,8 @@ impl<A: Clone> Doc<A> {
 
     /// A `Doc` of height 1 containing the given string. Its width is determined
     /// by the number of (UTF-8) characters in `s`.
-    pub fn text(s: String) -> Self {
+    pub fn text<S: ToString>(s: S) -> Self {
+        let s = s.to_string();
         let len = s.chars().count();
         Doc(D::sized_text(s, len))
     }
@@ -112,24 +113,25 @@ impl<A: Clone> Doc<A> {
         Doc(self.0.beside(true, d2.0))
     }
 
-    /// Put this document above `d2`, with no possibility of overlap.
-    ///
-    /// `d1.over(d2)` is the same as `d1.above(false, d2)`
+    /// Put this document above `d2`, requiring vertical space---no overlap.
     ///
     /// This is the `($+$)` operation in Haskell.
     pub fn over(self, d2: Self) -> Self {
-        Doc(self.0.above(false, d2.0))
-    }
-
-    /// Put this document above `d2`, with overlapping.
-    ///
-    /// `d1.overlap(d2)` is the same as `d1.above(true, d2)`
-    ///
-    /// This is the `($$)` operation in Haskell.
-    pub fn overlap(self, d2: Self) -> Self {
         Doc(self.0.above(true, d2.0))
     }
 
+    /// Put this document above `d2`, possibly with vertical space or possibly
+    /// with overlapping.
+    ///
+    /// This is the `($$)` operation in Haskell.
+    pub fn overlap(self, d2: Self) -> Self {
+        Doc(self.0.above(false, d2.0))
+    }
+
+    /// Space-separates the documents in `I`. Will automatically choose between
+    /// horizontal and vertical spacing.
+    /// 
+    /// A list form of `append_`.
     pub fn sep<I>(docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
@@ -137,11 +139,55 @@ impl<A: Clone> Doc<A> {
         Doc(D::sep_x(true, docs.into_iter().map(|d| d.0)))
     }
 
+    /// Concatenates the documents in `I`. Will automatically choose between
+    /// horizontal and vertical spacing.
+    /// 
+    /// A list form of `append`.
     pub fn cat<I>(docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
     {
         Doc(D::sep_x(false, docs.into_iter().map(|d| d.0)))
+    }
+
+    /// Like `sep`, but only horizontal spacing.
+    pub fn hsep<I>(docs: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Doc(D::hsep(docs.into_iter().map(|d| d.0)))
+    }
+
+    /// Like `cat`, but only horizontal spacing.
+    pub fn hcat<I>(docs: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Doc(D::hcat(docs.into_iter().map(|d| d.0)))
+    }
+
+    /// Like `cat`, but only vertical spacing (allowing overlap).
+    pub fn vcat<I>(docs: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Doc(D::vcat(docs.into_iter().map(|d| d.0)))
+    }
+
+    /// Like `cat` but with paragraph fill.
+    pub fn fcat<I>(docs: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Doc(D::fill(docs.into_iter().map(|d| d.0), false))
+    }
+
+    /// Like `sep` but with paragraph fill.
+    pub fn fsep<I>(docs: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Doc(D::fill(docs.into_iter().map(|d| d.0), true))
     }
 
     /// Hangs `d2` off `d1`, indented by `i`.
@@ -162,22 +208,6 @@ impl<A: Clone> Doc<A> {
             .into_iter()
             .map(|d| Doc(d))
             .collect()
-    }
-
-    /// Like `cat` but with paragraph fill.
-    pub fn fcat<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc(D::fill(docs.into_iter().map(|d| d.0), false))
-    }
-
-    /// Like `sep` but with paragraph fill.
-    pub fn fsep<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc(D::fill(docs.into_iter().map(|d| d.0), true))
     }
 
     /// Attaches an annotation to a document.
@@ -247,8 +277,86 @@ impl<A: Clone> Doc<A> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    type PlainDoc = Doc<()>;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn plain_text() {
+        assert_eq!(PlainDoc::text("hello").to_string(), "hello".to_string());
+        assert_eq!(PlainDoc::text("hi").to_string(), "hi".to_string());
+
+        assert_eq!(PlainDoc::char('q').to_string(), "q".to_string());
+        assert_eq!(PlainDoc::usize(32).to_string(), "32".to_string());
+
+        assert_eq!(PlainDoc::comma().to_string(), ",".to_string());
+    }
+
+    #[test]
+    fn plain_concatenation() {
+        assert_eq!(
+            PlainDoc::text("hell")
+                .append(PlainDoc::text("o"))
+                .to_string(),
+            "hello".to_string()
+        );
+
+        assert_eq!(
+            PlainDoc::text("hello")
+                .append_(PlainDoc::text("world"))
+                .to_string(),
+            "hello world".to_string()
+        );
+    }
+
+    #[test]
+    fn wrapping() {
+        assert_eq!(
+            PlainDoc::text("hello")
+                .append_(PlainDoc::text("world"))
+                .parens()
+                .to_string(),
+            "(hello world)".to_string()
+        );
+    }
+
+    #[test]
+    fn overlap() {
+        assert_eq!(
+            PlainDoc::text("hi")
+                .overlap(PlainDoc::text("there").nest(5))
+                .to_string(),
+            "hi   there"
+        );
+
+        assert_eq!(
+            PlainDoc::text("hi")
+                .over(PlainDoc::text("there").nest(5))
+                .to_string(),
+            "hi\n     there"
+        );
+    }
+
+    #[test]
+    fn punctuate() {
+        assert_eq!(
+            Doc::sep(PlainDoc::comma().punctuate(vec![
+                PlainDoc::text("et cetera"),
+                PlainDoc::text("etc"),
+                PlainDoc::text("&c")
+            ]))
+            .to_string(),
+            "et cetera, etc, &c".to_string()
+        );
+
+        assert_eq!(
+            Doc::hsep(PlainDoc::comma().punctuate(vec![
+                PlainDoc::text("et cetera"),
+                PlainDoc::text("etc"),
+                PlainDoc::text("&c")
+            ]))
+            .to_string(),
+            "et cetera, etc, &c".to_string()
+        );
     }
 }

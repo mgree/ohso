@@ -47,7 +47,7 @@ where
     NoDoc,
     /// `Beside(d1, b, d2)` is d1 next to d2, with b indicating whether there should be space between.
     Beside(Box<Doc<A>>, bool, Box<Doc<A>>),
-    /// `Above(d1, b, d2)` is d1 above d2, with b indicating whether overlap is allowed.
+    /// `Above(d1, b, d2)` is d1 above d2, with b indicating whether vertical spacing is required (`true`) or if overlap is allowed (`false`).
     Above(Box<Doc<A>>, bool, Box<Doc<A>>),
 }
 
@@ -203,36 +203,36 @@ impl<A: Clone> Doc<A> {
     }
 
     /// Put one `Doc` above another.
-    pub fn above(self, overlap: bool, d2: Self) -> Self {
+    pub fn above(self, space: bool, d2: Self) -> Self {
         match (self, d2) {
             (Doc::Empty, d) | (d, Doc::Empty) => d,
-            (Doc::Above(d1, b, d2), d3) => d1.above(b, d2.above(overlap, d3)),
-            (d1 @ Doc::Beside(..), d2) => d1.reduce().above_nest(overlap, 0, d2.reduce()),
-            (d1, d2) => d1.above_nest(overlap, 0, d2),
+            (Doc::Above(d1, b, d2), d3) => d1.above(b, d2.above(space, d3)),
+            (d1 @ Doc::Beside(..), d2) => d1.reduce().above_nest(space, 0, d2.reduce()),
+            (d1, d2) => d1.above_nest(space, 0, d2.reduce()),
         }
     }
 
-    fn above_nest(self, overlap: bool, i: isize, d2: Self) -> Self {
+    fn above_nest(self, space: bool, i: isize, d2: Self) -> Self {
         match self {
             Doc::NoDoc => Doc::NoDoc,
             Doc::Union(d11, d12) => Doc::Union(
-                Box::new(d11.above_nest(overlap, i, d2.clone())),
-                Box::new(d12.above_nest(overlap, i, d2)),
+                Box::new(d11.above_nest(space, i, d2.clone())),
+                Box::new(d12.above_nest(space, i, d2)),
             ),
             Doc::Empty => d2.mk_nest(i),
             Doc::Nest(i1, d1) => {
                 assert!(!d1.is_empty()); // invariant says `d1` can't be empty, so no need for `mk_nest`
-                Doc::Nest(i1, Box::new(d1.above_nest(overlap, i - i1, d2)))
+                Doc::Nest(i1, Box::new(d1.above_nest(space, i - i1, d2)))
             }
-            Doc::NilAbove(d) => Doc::NilAbove(Box::new(d.above_nest(overlap, i, d2))),
+            Doc::NilAbove(d) => Doc::NilAbove(Box::new(d.above_nest(space, i, d2))),
             Doc::TextBeside(ann, d1) => {
                 let i = i - isize::try_from(ann.size()).expect("text too long");
                 Doc::TextBeside(
                     ann,
                     Box::new(if d1.is_empty() {
-                        Doc::nil_above_nest(overlap, i, d2)
+                        Doc::nil_above_nest(space, i, d2)
                     } else {
-                        d1.above_nest(overlap, i, d2)
+                        d1.above_nest(space, i, d2)
                     }),
                 )
             }
@@ -241,11 +241,11 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    fn nil_above_nest(overlap: bool, i: isize, d2: Self) -> Self {
+    fn nil_above_nest(space: bool, i: isize, d2: Self) -> Self {
         match d2 {
             Doc::Empty => Doc::Empty,
-            Doc::Nest(k, d2) => Doc::nil_above_nest(overlap, i + k, *d2),
-            d2 if !overlap && i > 0 => Doc::TextBeside(
+            Doc::Nest(k, d2) => Doc::nil_above_nest(space, i + k, *d2),
+            d2 if !space && i > 0 => Doc::TextBeside(
                 Annot::indent(usize::try_from(i).expect("positive")),
                 Box::new(d2),
             ),
@@ -264,7 +264,7 @@ impl<A: Clone> Doc<A> {
             Some(d) => d,
         };
 
-        d1.sep1(spaces, 0, iter)
+        d1.reduce().sep1(spaces, 0, iter)
     }
 
     fn sep1<I>(self, spaces: bool, i: isize, docs: I) -> Self
@@ -277,7 +277,7 @@ impl<A: Clone> Doc<A> {
                 let docs = docs.into_iter().collect::<Vec<_>>();
                 Doc::Union(
                     Box::new(d1.sep1(spaces, i, docs.clone())),
-                    Box::new(d2.above_nest(false, i, Doc::vcat(docs))),
+                    Box::new(d2.above_nest(false, i, Doc::vcat(docs).reduce())),
                 )
             }
             Doc::Empty => Doc::sep_x(spaces, docs).mk_nest(i),
@@ -310,7 +310,7 @@ impl<A: Clone> Doc<A> {
                     Doc::hcat(docs.clone())
                 };
 
-                Doc::nil_beside(spaces, rest)
+                Doc::nil_beside(spaces, rest.reduce())
                     .oneliner()
                     .union(Doc::nil_above_nest(false, i, Doc::vcat(docs).reduce()))
             }
@@ -535,12 +535,12 @@ impl<A: Clone> Doc<A> {
     /// Returns its first argument if it is non-empty, otherwise its second.
     ///
     /// Dispatches to `or_else`.
-    pub fn first(d1: Self, d2: Self) -> Self {
+    pub fn first<'a>(d1: &'a Self, d2: &'a Self) -> &'a Self {
         d1.or_else(d2)
     }
 
     /// Returns `self` if it is non-empty, otherwise its second.
-    pub fn or_else(self, d2: Self) -> Self {
+    pub fn or_else<'a>(&'a self, d2: &'a Self) -> &'a Self {
         if self.is_non_empty_set() {
             self
         } else {
@@ -568,8 +568,8 @@ impl<A: Clone> Doc<A> {
 
     pub fn reduce(self) -> Self {
         match self {
-            Doc::Beside(d1, b, d2) => d1.mk_beside(b, *d2),
-            Doc::Above(d1, b, d2) => d1.above(b, *d2),
+            Doc::Beside(d1, b, d2) => d1.mk_beside(b, d2.reduce()),
+            Doc::Above(d1, b, d2) => d1.above(b, d2.reduce()),
             d => d,
         }
     }
