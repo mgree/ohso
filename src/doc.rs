@@ -35,7 +35,7 @@ use std::convert::TryFrom;
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#Doc.
 #[derive(Clone, Debug)]
-pub enum Doc<A>
+pub(crate) enum Doc<A>
 where
     A: Clone,
 {
@@ -102,32 +102,12 @@ impl<A: Clone> Doc<A> {
         )
     }
 
-    /// A `Doc` of height and width 1, containing the character provided.
     pub fn char(c: char) -> Self {
         Doc::TextBeside(Annot::No(Text::Char(c), 1), Box::new(Doc::Empty))
     }
 
-    /// A `Doc` of height 1 containing the given string. Its width is determined
-    /// by the number of (UTF-8) characters in `s`.
-    pub fn text(s: String) -> Self {
-        let len = s.chars().count();
-        Doc::sized_text(s, len)
-    }
-
-    /// A `Doc` of text with zero width. Useful for non-printing text, like
-    /// markup. (??? MMG: Is it zero height, though?)
-    pub fn zero_width_text(s: String) -> Self {
-        Doc::sized_text(s, 0)
-    }
-
-    /// A `Doc` of text with the given width.
     pub fn sized_text(s: String, len: usize) -> Self {
         Doc::TextBeside(Annot::No(Text::Str(s), len), Box::new(Doc::Empty))
-    }
-
-    /// The empty `Doc`.
-    pub fn empty() -> Self {
-        Doc::Empty
     }
 
     /// Determinse whether a `Doc` is empty.
@@ -169,30 +149,10 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    /// Put a document directly next to another, with no space.
-    ///
-    /// `d1.append(d2)` is the same as `d1.beside(false, d2)`
-    ///
-    /// This is the `(<>)` operation in Haskell.
-    pub fn append(self, d2: Self) -> Self {
-        self.beside(false, d2)
-    }
-
-    /// Put a document directly next to another with a space between (if both
-    /// are non-empty).
-    ///
-    /// `d1.append_(d2)` is the same as `d1.beside(true, d2)`
-    ///
-    /// This is the `(<+>)` operation in Haskell.
-    pub fn append_(self, d2: Self) -> Self {
-        self.beside(false, d2)
-    }
-
     /// Put one document beside another.
     ///
     /// Following
-    /// https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#beside_,
-    /// the implementation for (<>).
+    /// https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#beside_.
     pub fn beside(self, space: bool, d2: Self) -> Self {
         match (self, d2) {
             (Doc::Empty, d) | (d, Doc::Empty) => d,
@@ -239,24 +199,6 @@ impl<A: Clone> Doc<A> {
                 }
             }
         }
-    }
-
-    /// Put this document above `d2`, with no possibility of overlap.
-    ///
-    /// `d1.over(d2)` is the same as `d1.above(false, d2)`
-    ///
-    /// This is the `($+$)` operation in Haskell.
-    pub fn over(self, d2: Self) -> Self {
-        self.above(false, d2)
-    }
-
-    /// Put this document above `d2`, with overlapping.
-    ///
-    /// `d1.overlap(d2)` is the same as `d1.above(true, d2)`
-    ///
-    /// This is the `($$)` operation in Haskell.
-    pub fn overlap(self, d2: Self) -> Self {
-        self.above(true, d2)
     }
 
     /// Put one `Doc` above another.
@@ -310,21 +252,7 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    pub fn sep<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc::sep_x(true, docs)
-    }
-
-    pub fn cat<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc::sep_x(false, docs)
-    }
-
-    fn sep_x<I>(spaces: bool, docs: I) -> Self
+    pub fn sep_x<I>(spaces: bool, docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
     {
@@ -483,23 +411,7 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    /// Like `cat` but with paragraph fill.
-    pub fn fcat<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc::fill(docs, false)
-    }
-
-    /// Like `sep` but with paragraph fill.
-    pub fn fsep<I>(docs: I) -> Self
-    where
-        I: IntoIterator<Item = Self>,
-    {
-        Doc::fill(docs, true)
-    }
-
-    fn fill<I>(docs: I, spaces: bool) -> Self
+    pub fn fill<I>(docs: I, spaces: bool) -> Self
     where
         I: IntoIterator<Item = Self>,
     {
@@ -582,13 +494,6 @@ impl<A: Clone> Doc<A> {
         )
     }
 
-    /// Hangs `d2` off `d1`, indented by `i`.
-    ///
-    /// `d1.hang(i, d2)` is the same as `Doc::sep(vec![self, d2.nest(i)])`
-    pub fn hang(self, i: isize, d2: Self) -> Self {
-        Doc::sep(vec![self, d2.nest(i)])
-    }
-
     /// `sep.punctuate(docs)` joins `docs` together, separated by `sep`. No
     /// trailing separator.
     pub fn punctuate<I>(self, docs: I) -> Vec<Self>
@@ -603,7 +508,7 @@ impl<A: Clone> Doc<A> {
                 None => return v,
                 Some(d) => {
                     if iter.peek().is_some() {
-                        v.push(d.append(self.clone()));
+                        v.push(d.beside(false, self.clone()));
                     } else {
                         v.push(d);
                         return v;
@@ -626,23 +531,7 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    /// Returns its first argument if it is non-empty, otherwise its second.
-    ///
-    /// Dispatches to `or_else`.
-    pub fn first(d1: Self, d2: Self) -> Self {
-        d1.or_else(d2)
-    }
-
-    /// Returns `self` if it is non-empty, otherwise its second.
-    pub fn or_else(self, d2: Self) -> Self {
-        if self.is_non_empty_set() {
-            self
-        } else {
-            d2
-        }
-    }
-
-    fn is_non_empty_set(&self) -> bool {
+    pub fn is_non_empty_set(&self) -> bool {
         match self {
             Doc::NoDoc => false,
             Doc::Union(..) | Doc::Empty | Doc::NilAbove(..) => true,
