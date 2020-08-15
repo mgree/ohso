@@ -1,4 +1,8 @@
 mod doc;
+mod render;
+pub use doc::Annot;
+pub use doc::Text;
+pub use render::*;
 
 type D<A> = doc::Doc<A>;
 
@@ -80,22 +84,6 @@ impl<A: Clone> Doc<A> {
     /// horizontal/vertical layout.
     pub fn union(self, d2: Self) -> Self {
         Doc(self.0.union(d2.0))
-    }
-
-    /// Returns its first argument if it is non-empty, otherwise its second.
-    ///
-    /// Dispatches to `or_else`.
-    pub fn first(d1: Self, d2: Self) -> Self {
-        d1.or_else(d2)
-    }
-
-    /// Returns `self` if it is non-empty, otherwise its second.
-    pub fn or_else(self, d2: Self) -> Self {
-        if self.0.is_non_empty_set() {
-            self
-        } else {
-            d2
-        }
     }
 
     /// Nest/indent a document by a given number of positions. Indentation may

@@ -54,13 +54,14 @@ where
 /// Annotations.
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#AnnotDetails.
+/// OPT MMG with a lifetime parameter, we can keep annotations by reference
 #[derive(Clone, Debug)]
-pub(crate) enum Annot<A>
+pub enum Annot<A>
 where
     A: Clone,
 {
     Start,
-    No(Text, usize),
+    Text(Text, usize),
     End(A),
 }
 
@@ -68,7 +69,7 @@ where
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#TextDetails.
 #[derive(Clone, Debug)]
-pub(crate) enum Text {
+pub enum Text {
     Char(char),
     Str(String),
     // OPT MMG small string?
@@ -103,11 +104,11 @@ impl<A: Clone> Doc<A> {
     }
 
     pub fn char(c: char) -> Self {
-        Doc::TextBeside(Annot::No(Text::Char(c), 1), Box::new(Doc::Empty))
+        Doc::TextBeside(Annot::Text(Text::Char(c), 1), Box::new(Doc::Empty))
     }
 
     pub fn sized_text(s: String, len: usize) -> Self {
-        Doc::TextBeside(Annot::No(Text::Str(s), len), Box::new(Doc::Empty))
+        Doc::TextBeside(Annot::Text(Text::Str(s), len), Box::new(Doc::Empty))
     }
 
     /// Determinse whether a `Doc` is empty.
@@ -317,7 +318,7 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    /// Like `append_`, but for a list of documents. No trailing spaces.
+    /// Like `append_`, but for a list of documents. Text trailing spaces.
     pub fn hsep<I>(docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
@@ -494,7 +495,7 @@ impl<A: Clone> Doc<A> {
         )
     }
 
-    /// `sep.punctuate(docs)` joins `docs` together, separated by `sep`. No
+    /// `sep.punctuate(docs)` joins `docs` together, separated by `sep`. Text
     /// trailing separator.
     pub fn punctuate<I>(self, docs: I) -> Vec<Self>
     where
@@ -531,7 +532,23 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    pub fn is_non_empty_set(&self) -> bool {
+    /// Returns its first argument if it is non-empty, otherwise its second.
+    ///
+    /// Dispatches to `or_else`.
+    pub fn first(d1: Self, d2: Self) -> Self {
+        d1.or_else(d2)
+    }
+
+    /// Returns `self` if it is non-empty, otherwise its second.
+    pub fn or_else(self, d2: Self) -> Self {
+        if self.is_non_empty_set() {
+            self
+        } else {
+            d2
+        }
+    }
+
+    fn is_non_empty_set(&self) -> bool {
         match self {
             Doc::NoDoc => false,
             Doc::Union(..) | Doc::Empty | Doc::NilAbove(..) => true,
@@ -549,7 +566,7 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    fn reduce(self) -> Self {
+    pub fn reduce(self) -> Self {
         match self {
             Doc::Beside(d1, b, d2) => d1.mk_beside(b, *d2),
             Doc::Above(d1, b, d2) => d1.above(b, *d2),
@@ -559,10 +576,10 @@ impl<A: Clone> Doc<A> {
 }
 
 impl<A: Clone> Annot<A> {
-    /// The size of an annotation. Looks only at the text parts (`Annot::No`).
+    /// The size of an annotation. Looks only at the text parts (`Annot::Text`).
     pub fn size(&self) -> usize {
         match self {
-            Annot::No(_txt, l) => *l,
+            Annot::Text(_txt, l) => *l,
             Annot::Start | Annot::End(_) => 0,
         }
     }
@@ -574,17 +591,21 @@ impl<A: Clone> Annot<A> {
     {
         match self {
             Annot::Start => Annot::Start,
-            Annot::No(txt, l) => Annot::No(txt, l),
+            Annot::Text(txt, l) => Annot::Text(txt, l),
             Annot::End(a) => Annot::End(f(a)),
         }
     }
 
     pub fn space() -> Self {
-        Annot::No(Text::Char(' '), 1)
+        Annot::Text(Text::Char(' '), 1)
+    }
+
+    pub fn newline() -> Self {
+        Annot::Text(Text::Char('\n'), 1)
     }
 
     pub fn indent(i: usize) -> Self {
-        Annot::No(
+        Annot::Text(
             Text::Str(std::iter::repeat(' ').take(i).collect::<String>()),
             i,
         )
