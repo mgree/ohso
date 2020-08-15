@@ -611,3 +611,9 @@ impl<A: Clone> Annot<A> {
         )
     }
 }
+
+impl From<&str> for Text {
+    fn from(s: &str) -> Self {
+        Text::Str(s.into())
+    }
+}

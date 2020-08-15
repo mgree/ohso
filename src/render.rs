@@ -66,44 +66,152 @@ pub struct Span<A: Clone> {
     annotation: A,
 }
 
+#[derive(Clone)]
+struct OpenSpan<A: Clone> {
+    end: usize,
+    annotation: A,
+}
+
+impl<A: Clone> OpenSpan<A> {
+    fn start(self, start: usize) -> Span<A> {
+        Span {
+            start,
+            length: start - self.end,
+            annotation: self.annotation,
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Rendering
 
 impl<A: Clone> Doc<A> {
-    pub fn render<W>(self, out: &mut W) -> Vec<Span<A>>
-    where
-        W: std::io::Write,
-    {
-        todo!()
+    pub fn render(self, style: &Style) -> (String, Vec<Span<A>>) {
+        // this is offset _from the end_
+        let mut offset: usize = 0;
+        let mut stack: Vec<OpenSpan<A>> = Vec::new();
+        let mut spans: Vec<Span<A>> = Vec::new();
+        // stored in reverse order
+        // OPT MMG use a rope or something
+        let mut output: Vec<(Text, usize)> = Vec::new();
+
+        self.full_render_ann(style, &mut |ann| match ann {
+            Annot::Start => {
+                let span = stack.pop().expect("span stack underflow in render");
+                spans.push(span.start(offset));
+            }
+            Annot::End(annotation) => stack.push(OpenSpan {
+                end: offset,
+                annotation,
+            }),
+            Annot::Text(txt, len) => {
+                offset += len;
+                output.push((txt, len));
+            }
+        });
+
+        // fix up start of span
+        for span in &mut spans {
+            span.start = offset - span.start;
+        }
+
+        // construct the output string
+        // OPT MMG use std::io::Write?
+        output.reverse();
+        let len = output.iter().map(|(_, len)| len).sum();
+        let mut rendered = String::new();
+        rendered.reserve(len);
+
+        for txt in output.into_iter() {
+            match txt {
+                (Text::Char(c), _) => rendered.push(c),
+                (Text::Str(s), _) => rendered.push_str(&s),
+            }
+        }
+
+        (rendered, spans)
     }
 
-    pub fn full_render<F, B>(self, style: &Style, txt: &F, end: B) -> B
+    pub fn render_annotated<F>(self, style: &Style, ann_start: &mut F, ann_end: &mut F) -> String
     where
-        F: Fn(Text, B) -> B,
+        F: FnMut(&A) -> &str,
     {
-        self.full_render_ann(
-            style,
-            &|ann, b| match ann {
-                Annot::Text(s, _) => txt(s, b),
-                _ => b,
-            },
-            end,
-        )
+        // this is offset _from the end_
+        let mut offset: usize = 0;
+        let mut stack: Vec<A> = Vec::new();
+        let mut output: Vec<(Text, usize)> = Vec::new();
+
+        self.full_render_ann(style, &mut |ann| match ann {
+            Annot::Start => {
+                let annotation = stack
+                    .pop()
+                    .expect("span stack underflow in render_annotated");
+                let s = ann_start(&annotation);
+                output.push((s.into(), s.len()));
+            }
+            Annot::End(annotation) => {
+                let s = ann_end(&annotation);
+                output.push((s.into(), s.len()));
+                stack.push(annotation);
+            }
+            Annot::Text(txt, len) => {
+                offset += len;
+                output.push((txt, len));
+            }
+        });
+
+        // construct the output string
+        // OPT MMG use std::io::Write?
+        output.reverse();
+        let len = output.iter().map(|(_, len)| len).sum();
+        let mut rendered = String::new();
+        rendered.reserve(len);
+
+        for txt in output.into_iter() {
+            match txt {
+                (Text::Char(c), _) => rendered.push(c),
+                (Text::Str(s), _) => rendered.push_str(&s),
+            }
+        }
+
+        rendered
     }
 
-    pub fn full_render_ann<F, B>(self, style: &Style, txt: &F, end: B) -> B
+    /// A fold over the `Doc` structure, using `style` to make decisions. The
+    /// `txt` function adds text segments and `end` is the base case for empty
+    /// documents.
+    ///
+    /// Implemented by the more general `full_render_ann`, which looks at all
+    /// annotations. This version looks only at `Annot::Text`.
+    pub fn full_render<F>(self, style: &Style, txt: &mut F)
     where
-        F: Fn(Annot<A>, B) -> B,
+        F: FnMut(Text) -> (),
+    {
+        self.full_render_ann(style, &mut |ann| match ann {
+            Annot::Text(s, _) => txt(s),
+            Annot::Start | Annot::End(..) => (),
+        })
+    }
+
+    /// A fold over the `Doc` structure, using `style` to make decisions. The
+    /// `txt` function handles anotations and `end` is the base case for empty
+    /// documents.
+    ///
+    /// Traversal is in reverse: later parts of the string are processed first,
+    /// with `Annot::Start` coming _after_ `Annot::End`.
+    pub fn full_render_ann<F>(self, style: &Style, txt: &mut F)
+    where
+        F: FnMut(Annot<A>) -> (),
     {
         match style.mode {
             Mode::OneLine => self
                 .0
                 .reduce()
-                .easy_display(Annot::space(), &|_d1, d2| d2, txt, end),
+                .easy_display(Annot::space(), &|_d1, d2| d2, txt),
             Mode::Left => self
                 .0
                 .reduce()
-                .easy_display(Annot::newline(), &D::first, txt, end),
+                .easy_display(Annot::newline(), &D::first, txt),
             Mode::Page | Mode::ZigZag => {
                 let line_length = match style.mode {
                     Mode::ZigZag => usize::MAX,
@@ -112,56 +220,52 @@ impl<A: Clone> Doc<A> {
                 let ribbon_length: usize =
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as usize;
 
-                self.0.reduce().best(line_length, ribbon_length).display(
-                    style,
-                    ribbon_length,
-                    txt,
-                    end,
-                )
+                self.0
+                    .reduce()
+                    .best(line_length, ribbon_length)
+                    .display(style, ribbon_length, txt)
             }
         }
     }
 }
 
 impl<A: Clone> D<A> {
-    pub fn easy_display<C, F, B>(self, nl_space: Annot<A>, choose: &C, txt: &F, end: B) -> B
+    pub fn easy_display<C, F>(self, nl_space: Annot<A>, choose: &C, txt: &mut F)
     where
         C: Fn(Self, Self) -> Self,
-        F: Fn(Annot<A>, B) -> B,
+        F: FnMut(Annot<A>) -> (),
     {
         match self {
-            D::Union(d1, d2) => choose(*d1, *d2).easy_display(nl_space, choose, txt, end),
-            D::Nest(_, d) => d.easy_display(nl_space, choose, txt, end),
-            D::Empty => end,
-            D::NilAbove(d) => txt(nl_space.clone(), d.easy_display(nl_space, choose, txt, end)),
-            D::TextBeside(ann, d) => txt(ann, d.easy_display(nl_space, choose, txt, end)),
+            D::Union(d1, d2) => choose(*d1, *d2).easy_display(nl_space, choose, txt),
+            D::Nest(_, d) => d.easy_display(nl_space, choose, txt),
+            D::Empty => (),
+            D::NilAbove(d) => {
+                d.easy_display(nl_space.clone(), choose, txt);
+                txt(nl_space);
+            }
+            D::TextBeside(ann, d) => {
+                d.easy_display(nl_space, choose, txt);
+                txt(ann);
+            }
             D::Above(..) => panic!("easy_display on Above"),
             D::Beside(..) => panic!("easy_display on Beside"),
             D::NoDoc => panic!("easy_display on NoDoc"),
         }
     }
 
-    pub fn display<F, B>(self, style: &Style, ribbon_length: usize, txt: &F, end: B) -> B
+    pub fn display<F>(self, style: &Style, ribbon_length: usize, txt: &mut F)
     where
-        F: Fn(Annot<A>, B) -> B,
+        F: FnMut(Annot<A>) -> (),
     {
         let gap_width = style.line_length - ribbon_length;
         let shift = gap_width / 2;
 
-        self.lay(style, gap_width, shift, 0, txt, end)
+        self.lay(style, gap_width, shift, 0, txt)
     }
 
-    fn lay<F, B>(
-        self,
-        style: &Style,
-        gap_width: usize,
-        shift: usize,
-        k: usize,
-        txt: &F,
-        end: B,
-    ) -> B
+    fn lay<F>(self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
     where
-        F: Fn(Annot<A>, B) -> B,
+        F: FnMut(Annot<A>) -> (),
     {
         match self {
             D::Nest(k1, d) => d.lay(
@@ -170,46 +274,34 @@ impl<A: Clone> D<A> {
                 shift,
                 k + usize::try_from(k1).expect("positive"),
                 txt,
-                end,
             ),
-            D::Empty => end,
-            D::NilAbove(d) => txt(
-                Annot::newline(),
-                d.lay(style, gap_width, shift, k, txt, end),
-            ),
+            D::Empty => (),
+            D::NilAbove(d) => {
+                d.lay(style, gap_width, shift, k, txt);
+                txt(Annot::newline());
+            }
             D::TextBeside(ann, d) => match style.mode {
                 Mode::ZigZag => {
                     if k >= gap_width {
-                        txt(
-                            Annot::newline(),
-                            txt(
-                                Annot::Text(
-                                    Text::Str(std::iter::repeat('/').take(shift).collect()),
-                                    shift,
-                                ),
-                                txt(
-                                    Annot::newline(),
-                                    d.lay1(style, gap_width, shift, k - shift, ann, txt, end),
-                                ),
-                            ),
-                        )
+                        d.lay1(style, gap_width, shift, k - shift, ann, txt);
+                        txt(Annot::newline());
+                        txt(Annot::Text(
+                            Text::Str(std::iter::repeat('/').take(shift).collect()),
+                            shift,
+                        ));
+
+                        txt(Annot::newline())
                     } else {
-                        txt(
-                            Annot::newline(),
-                            txt(
-                                Annot::Text(
-                                    Text::Str(std::iter::repeat('\\').take(shift).collect()),
-                                    shift,
-                                ),
-                                txt(
-                                    Annot::newline(),
-                                    d.lay1(style, gap_width, shift, k + shift, ann, txt, end),
-                                ),
-                            ),
-                        )
+                        d.lay1(style, gap_width, shift, k + shift, ann, txt);
+                        txt(Annot::newline());
+                        txt(Annot::Text(
+                            Text::Str(std::iter::repeat('\\').take(shift).collect()),
+                            shift,
+                        ));
+                        txt(Annot::newline());
                     }
                 }
-                _ => d.lay1(style, gap_width, shift, k, ann, txt, end),
+                _ => d.lay1(style, gap_width, shift, k, ann, txt),
             },
             D::Above(..) => panic!("display on Above"),
             D::Beside(..) => panic!("display on Beside"),
@@ -218,49 +310,37 @@ impl<A: Clone> D<A> {
         }
     }
 
-    fn lay1<F, B>(
+    fn lay1<F>(
         self,
         style: &Style,
         gap_width: usize,
         shift: usize,
         k: usize,
         ann: Annot<A>,
-        txt: &F,
-        end: B,
-    ) -> B
-    where
-        F: Fn(Annot<A>, B) -> B,
+        txt: &mut F,
+    ) where
+        F: FnMut(Annot<A>) -> (),
     {
-        let size = ann.size();
-        txt(
-            Annot::indent(k),
-            txt(ann, self.lay2(style, gap_width, shift, k + size, txt, end)),
-        )
+        self.lay2(style, gap_width, shift, k + ann.size(), txt);
+        txt(ann);
+        txt(Annot::indent(k));
     }
 
-    fn lay2<F, B>(
-        self,
-        style: &Style,
-        gap_width: usize,
-        shift: usize,
-        k: usize,
-        txt: &F,
-        end: B,
-    ) -> B
+    fn lay2<F>(self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
     where
-        F: Fn(Annot<A>, B) -> B,
+        F: FnMut(Annot<A>) -> (),
     {
         match self {
-            D::NilAbove(d) => txt(
-                Annot::newline(),
-                d.lay(style, gap_width, shift, k, txt, end),
-            ),
-            D::TextBeside(ann, d) => {
-                let size = ann.size();
-                txt(ann, d.lay2(style, gap_width, shift, k + size, txt, end))
+            D::NilAbove(d) => {
+                d.lay(style, gap_width, shift, k, txt);
+                txt(Annot::newline());
             }
-            D::Nest(_, d) => d.lay2(style, gap_width, shift, k, txt, end),
-            D::Empty => end,
+            D::TextBeside(ann, d) => {
+                d.lay2(style, gap_width, shift, k + ann.size(), txt);
+                txt(ann);
+            }
+            D::Nest(_, d) => d.lay2(style, gap_width, shift, k, txt),
+            D::Empty => (),
             D::Above(..) => panic!("lay2 on Above"),
             D::Beside(..) => panic!("lay2 on Beside"),
             D::NoDoc => panic!("lay2 on NoDoc"),
