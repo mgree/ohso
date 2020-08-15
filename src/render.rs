@@ -70,6 +70,13 @@ pub struct Span<A: Clone> {
 // Rendering
 
 impl<A: Clone> Doc<A> {
+    pub fn render<W>(self, out: &mut W) -> Vec<Span<A>>
+    where
+        W: std::io::Write,
+    {
+        todo!()
+    }
+
     pub fn full_render<F, B>(self, style: &Style, txt: &F, end: B) -> B
     where
         F: Fn(Text, B) -> B,
