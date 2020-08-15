@@ -1,7 +1,48 @@
 mod doc;
 
 type D<A> = doc::Doc<A>;
+
+/// The type of pretty-printable documents.
 pub struct Doc<A: Clone>(D<A>);
+
+macro_rules! conversion {
+    ($id:ident, $T:ty) => {
+        /// Macro-generated `Doc` conversion taking $T to a `Doc`.
+        pub fn $id(v: $T) -> Self {
+            Doc::text(format!("{}", v))
+        }
+    };
+}
+
+macro_rules! derived {
+    ($id:ident, $s:expr) => {
+        /// Macro-generated `Doc` containing just `$s`.
+        pub fn $id() -> Self {
+            Doc::text(String::from($s))
+        }
+    };
+}
+
+macro_rules! wrapped {
+    ($id:ident, $l:expr, $r:expr) => {
+        /// Macro-generated method that wraps a `Doc` in `$l` and `$r`.
+        pub fn $id(self) -> Self {
+            Doc::char($l).append(self).append(Doc::char($r))
+        }
+
+        paste::paste! {
+        /// A conditional form of `$id`; it only applies when `b` is `true`;
+        /// otherwise it's the identity function.
+        pub fn [< maybe_ $id >](self, b: bool) -> Self {
+                if b {
+                    self.$id()
+                } else {
+                    self
+                }
+            }
+        }
+    };
+}
 
 impl<A: Clone> Doc<A> {
     /// A `Doc` of height and width 1, containing the character provided.
@@ -34,8 +75,9 @@ impl<A: Clone> Doc<A> {
 
     /// Creates a choice between two possible layouts of the same document.
     ///
-    /// It is an invariant that the two layouts flatten into the same text; the
-    /// only difference should be in spacing and horizontal/vertical layout.
+    /// It is an (unchecked, internal) invariant that the two layouts flatten
+    /// into the same text; the only difference should be in spacing and
+    /// horizontal/vertical layout.
     pub fn union(self, d2: Self) -> Self {
         Doc(self.0.union(d2.0))
     }
@@ -156,6 +198,55 @@ impl<A: Clone> Doc<A> {
     }
 
     //////////////////////////////////////////////////////////////////////
+    // Conversions
+
+    conversion!(isize, isize);
+    conversion!(i8, i8);
+    conversion!(i16, i16);
+    conversion!(i32, i32);
+    conversion!(i64, i64);
+    conversion!(i128, i128);
+
+    conversion!(usize, usize);
+    conversion!(u8, u8);
+    conversion!(u16, u16);
+    conversion!(u32, u32);
+    conversion!(u64, u64);
+    conversion!(u128, u128);
+
+    conversion!(f32, f32);
+    conversion!(f64, f64);
+
+    //////////////////////////////////////////////////////////////////////
+    // Derived documents
+
+    derived!(semi, ";");
+    derived!(dot, ".");
+    derived!(comma, ",");
+    derived!(colon, ":");
+    derived!(space, " ");
+    derived!(equals, "=");
+    derived!(lparen, "(");
+    derived!(rparen, ")");
+    derived!(lbrack, "[");
+    derived!(rbrack, "]");
+    derived!(lbrace, "{");
+    derived!(rbrace, "}");
+    derived!(langle, "<");
+    derived!(rangle, ">");
+
+    //////////////////////////////////////////////////////////////////////
+    // Wrapping
+
+    wrapped!(single_quotes, '\'', '\'');
+    wrapped!(double_quotes, '"', '"');
+    wrapped!(parens, '(', ')');
+    wrapped!(brackets, '[', ']');
+    wrapped!(braces, '{', '}');
+    wrapped!(angles, '<', '>');
+
+    //////////////////////////////////////////////////////////////////////
+    // Abstract nonsense
 
     /// Maps a function `f` over the annotations in the document.
     pub fn map<B: Clone, F>(self, f: &F) -> Doc<B>

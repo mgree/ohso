@@ -55,7 +55,7 @@ where
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#AnnotDetails.
 #[derive(Clone, Debug)]
-pub enum Annot<A>
+pub(crate) enum Annot<A>
 where
     A: Clone,
 {
@@ -68,7 +68,7 @@ where
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#TextDetails.
 #[derive(Clone, Debug)]
-pub enum Text {
+pub(crate) enum Text {
     Char(char),
     Str(String),
     // OPT MMG small string?
