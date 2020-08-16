@@ -447,6 +447,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn huge_text() {
         // anything bigger overflows 8MB stack
         let t = vec!["hi"; 1020];
