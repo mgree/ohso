@@ -9,11 +9,25 @@ type D<A> = doc::Doc<A>;
 /// The type of pretty-printable documents.
 pub struct Doc<A: Clone>(D<A>);
 
+pub trait ToDoc<A: Clone> {
+    fn to_doc(self) -> Doc<A>;
+}
+
 macro_rules! conversion {
     ($id:ident, $T:ty) => {
-        /// Macro-generated `Doc` conversion taking $T to a `Doc`.
-        pub fn $id(v: $T) -> Self {
-            Doc::text(format!("{}", v))
+        impl<A: Clone> Doc<A> {
+            /// Macro-generated `Doc` conversion taking $T to a `Doc`.
+            pub fn $id(v: $T) -> Self {
+                Doc::text(format!("{}", v))
+            }
+        }
+
+        impl<A: Clone> ToDoc<A> for $T {
+            /// Macro-generated, automatic conversion from `$T` to `Doc`. Calls
+            /// `Doc::$id`.
+            fn to_doc(self) -> Doc<A> {
+                Doc::$id(self)
+            }
         }
     };
 }
@@ -78,15 +92,6 @@ impl<A: Clone> Doc<A> {
         Doc(D::Empty)
     }
 
-    /// Creates a choice between two possible layouts of the same document.
-    ///
-    /// It is an (unchecked, internal) invariant that the two layouts flatten
-    /// into the same text; the only difference should be in spacing and
-    /// horizontal/vertical layout.
-    pub fn union(self, d2: Self) -> Self {
-        Doc(self.0.union(d2.0))
-    }
-
     /// Nest/indent a document by a given number of positions. Indentation may
     /// be negative in sub-parts of the document, but document layout will
     /// misbehave if there are top-level negative indents.
@@ -99,8 +104,8 @@ impl<A: Clone> Doc<A> {
     /// `d1.append(d2)` is the same as `d1.beside(false, d2)`
     ///
     /// This is the `(<>)` operation in Haskell.
-    pub fn append(self, d2: Self) -> Self {
-        Doc(self.0.beside(false, d2.0))
+    pub fn append<T: ToDoc<A>>(self, d2: T) -> Self {
+        Doc(self.0.beside(false, d2.to_doc().0))
     }
 
     /// Put a document directly next to another with a space between (if both
@@ -109,102 +114,109 @@ impl<A: Clone> Doc<A> {
     /// `d1.append_(d2)` is the same as `d1.beside(true, d2)`
     ///
     /// This is the `(<+>)` operation in Haskell.
-    pub fn append_(self, d2: Self) -> Self {
-        Doc(self.0.beside(true, d2.0))
+    pub fn append_<T: ToDoc<A>>(self, d2: T) -> Self {
+        Doc(self.0.beside(true, d2.to_doc().0))
     }
 
     /// Put this document above `d2`, requiring vertical space---no overlap.
     ///
     /// This is the `($+$)` operation in Haskell.
-    pub fn over(self, d2: Self) -> Self {
-        Doc(self.0.above(true, d2.0))
+    pub fn over<T: ToDoc<A>>(self, d2: T) -> Self {
+        Doc(self.0.above(true, d2.to_doc().0))
     }
 
     /// Put this document above `d2`, possibly with vertical space or possibly
     /// with overlapping.
     ///
     /// This is the `($$)` operation in Haskell.
-    pub fn overlap(self, d2: Self) -> Self {
-        Doc(self.0.above(false, d2.0))
+    pub fn overlap<T: ToDoc<A>>(self, d2: T) -> Self {
+        Doc(self.0.above(false, d2.to_doc().0))
     }
 
     /// Space-separates the documents in `I`. Will automatically choose between
     /// horizontal and vertical spacing.
-    /// 
+    ///
     /// A list form of `append_`.
-    pub fn sep<I>(docs: I) -> Self
+    pub fn sep<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::sep_x(true, docs.into_iter().map(|d| d.0)))
+        Doc(D::sep_x(true, docs.into_iter().map(|d| d.to_doc().0)))
     }
 
     /// Concatenates the documents in `I`. Will automatically choose between
     /// horizontal and vertical spacing.
-    /// 
+    ///
     /// A list form of `append`.
-    pub fn cat<I>(docs: I) -> Self
+    pub fn cat<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::sep_x(false, docs.into_iter().map(|d| d.0)))
+        Doc(D::sep_x(false, docs.into_iter().map(|d| d.to_doc().0)))
     }
 
     /// Like `sep`, but only horizontal spacing.
-    pub fn hsep<I>(docs: I) -> Self
+    pub fn hsep<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::hsep(docs.into_iter().map(|d| d.0)))
+        Doc(D::hsep(docs.into_iter().map(|d| d.to_doc().0)))
     }
 
     /// Like `cat`, but only horizontal spacing.
-    pub fn hcat<I>(docs: I) -> Self
+    pub fn hcat<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::hcat(docs.into_iter().map(|d| d.0)))
+        Doc(D::hcat(docs.into_iter().map(|d| d.to_doc().0)))
     }
 
     /// Like `cat`, but only vertical spacing (allowing overlap).
-    pub fn vcat<I>(docs: I) -> Self
+    pub fn vcat<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::vcat(docs.into_iter().map(|d| d.0)))
+        Doc(D::vcat(docs.into_iter().map(|d| d.to_doc().0)))
     }
 
     /// Like `cat` but with paragraph fill.
-    pub fn fcat<I>(docs: I) -> Self
+    pub fn fcat<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
     {
-        Doc(D::fill(docs.into_iter().map(|d| d.0), false))
+        Doc(D::fill(docs.into_iter().map(|d| d.to_doc().0), false))
     }
 
     /// Like `sep` but with paragraph fill.
-    pub fn fsep<I>(docs: I) -> Self
+    pub fn fsep<I, T>(docs: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
-        Doc(D::fill(docs.into_iter().map(|d| d.0), true))
+        Doc(D::fill(docs.into_iter().map(|d| d.to_doc().0), true))
     }
 
     /// Hangs `d2` off `d1`, indented by `i`.
     ///
     /// `d1.hang(i, d2)` is the same as `Doc::sep(vec![self, d2.nest(i)])`
-    pub fn hang(self, i: isize, d2: Self) -> Self {
-        Doc(D::sep_x(true, vec![self.0, d2.0.nest(i)]))
+    pub fn hang<T: ToDoc<A>>(self, i: isize, d2: T) -> Self {
+        Doc(D::sep_x(true, vec![self.0, d2.to_doc().0.nest(i)]))
     }
 
     /// `sep.punctuate(docs)` joins `docs` together, separated by `sep`. No
     /// trailing separator.
-    pub fn punctuate<I>(self, docs: I) -> Vec<Self>
+    pub fn punctuate<I, T>(self, docs: I) -> Vec<Self>
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T>,
+        T: ToDoc<A>,
     {
         self.0
-            .punctuate(docs.into_iter().map(|d| d.0))
+            .punctuate(docs.into_iter().map(|d| d.to_doc().0))
             .into_iter()
             .map(|d| Doc(d))
             .collect()
@@ -214,26 +226,6 @@ impl<A: Clone> Doc<A> {
     pub fn annotate(self, a: A) -> Self {
         Doc(D::annotate(self.0, a))
     }
-
-    //////////////////////////////////////////////////////////////////////
-    // Conversions
-
-    conversion!(isize, isize);
-    conversion!(i8, i8);
-    conversion!(i16, i16);
-    conversion!(i32, i32);
-    conversion!(i64, i64);
-    conversion!(i128, i128);
-
-    conversion!(usize, usize);
-    conversion!(u8, u8);
-    conversion!(u16, u16);
-    conversion!(u32, u32);
-    conversion!(u64, u64);
-    conversion!(u128, u128);
-
-    conversion!(f32, f32);
-    conversion!(f64, f64);
 
     //////////////////////////////////////////////////////////////////////
     // Derived documents
@@ -275,6 +267,50 @@ impl<A: Clone> Doc<A> {
     }
 }
 
+//////////////////////////////////////////////////////////////////////
+// Conversions
+
+conversion!(isize, isize);
+conversion!(i8, i8);
+conversion!(i16, i16);
+conversion!(i32, i32);
+conversion!(i64, i64);
+conversion!(i128, i128);
+
+conversion!(usize, usize);
+conversion!(u8, u8);
+conversion!(u16, u16);
+conversion!(u32, u32);
+conversion!(u64, u64);
+conversion!(u128, u128);
+
+conversion!(f32, f32);
+conversion!(f64, f64);
+
+impl<A: Clone> ToDoc<A> for char {
+    fn to_doc(self) -> Doc<A> {
+        Doc::char(self)
+    }
+}
+
+impl<A: Clone> ToDoc<A> for String {
+    fn to_doc(self) -> Doc<A> {
+        Doc::text(self)
+    }
+}
+
+impl<A: Clone> ToDoc<A> for &str {
+    fn to_doc(self) -> Doc<A> {
+        Doc::text(self.to_string())
+    }
+}
+
+impl<A: Clone> ToDoc<A> for Doc<A> {
+    fn to_doc(self) -> Doc<A> {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,9 +338,24 @@ mod tests {
         );
 
         assert_eq!(
+            ToDoc::<()>::to_doc("hell").append("o").to_string(),
+            "hello".to_string()
+        );
+
+        assert_eq!(
+            PlainDoc::text("hell").append("o").to_string(),
+            "hello".to_string()
+        );
+
+        assert_eq!(
             PlainDoc::text("hello")
                 .append_(PlainDoc::text("world"))
                 .to_string(),
+            "hello world".to_string()
+        );
+
+        assert_eq!(
+            PlainDoc::text("hello").append_("world").to_string(),
             "hello world".to_string()
         );
     }
@@ -314,6 +365,14 @@ mod tests {
         assert_eq!(
             PlainDoc::text("hello")
                 .append_(PlainDoc::text("world"))
+                .parens()
+                .to_string(),
+            "(hello world)".to_string()
+        );
+
+        assert_eq!(
+            PlainDoc::text("hello")
+                .append_("world")
                 .parens()
                 .to_string(),
             "(hello world)".to_string()
@@ -331,6 +390,13 @@ mod tests {
 
         assert_eq!(
             PlainDoc::text("hi")
+                .overlap("there".to_doc().nest(5))
+                .to_string(),
+            "hi   there"
+        );
+
+        assert_eq!(
+            PlainDoc::text("hi")
                 .over(PlainDoc::text("there").nest(5))
                 .to_string(),
             "hi\n     there"
@@ -338,25 +404,39 @@ mod tests {
     }
 
     #[test]
-    fn punctuate() {
+    fn punctuate_sep_hsep_hcat() {
         assert_eq!(
             Doc::sep(PlainDoc::comma().punctuate(vec![
                 PlainDoc::text("et cetera"),
                 PlainDoc::text("etc"),
-                PlainDoc::text("&c")
+                PlainDoc::text("&c"),
             ]))
             .to_string(),
             "et cetera, etc, &c".to_string()
         );
 
         assert_eq!(
-            Doc::hsep(PlainDoc::comma().punctuate(vec![
-                PlainDoc::text("et cetera"),
-                PlainDoc::text("etc"),
-                PlainDoc::text("&c")
-            ]))
-            .to_string(),
+            Doc::hsep(PlainDoc::comma().punctuate(vec!["et cetera", "etc", "&c"])).to_string(),
             "et cetera, etc, &c".to_string()
         );
+
+        assert_eq!(
+            Doc::hcat(PlainDoc::comma().punctuate(vec!["et cetera", "etc", "&c"])).to_string(),
+            "et cetera,etc,&c".to_string()
+        );
+
+        assert_eq!(
+            Doc::cat(PlainDoc::comma().punctuate(vec!["et cetera", "etc", "&c"])).to_string(),
+            "et cetera,etc,&c".to_string()
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn vcat() {
+        assert_eq!(
+            PlainDoc::vcat(vec!["one", "2", "iii"]).to_string(),
+            "one\n2\niii".to_string()
+        )
     }
 }

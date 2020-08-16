@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 /// Documents. `A` is the type of annotations.
 ///
-/// Here are the invariants:
+/// Here are the invariants (copied verbatim from the Haskell documentation):
 ///
 /// 1) The argument of `NilAbove` is never `Empty`. Therefore a `NilAbove` occupies at
 /// least two lines.
@@ -121,6 +121,12 @@ impl<A: Clone> Doc<A> {
         }
     }
 
+    /// Creates a choice between two possible layouts of the same document.
+    ///
+    /// It is an (unchecked, internal) invariant that the two layouts flatten
+    /// into the same text; the only difference should be in spacing and
+    /// horizontal/vertical layout.
+    /// 
     /// Corresponds to mkUnion
     pub fn union(self, d2: Self) -> Self {
         match (self, d2) {
