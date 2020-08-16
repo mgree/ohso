@@ -26,16 +26,16 @@ pub enum Mode {
 #[derive(Clone, Copy)]
 pub struct Style {
     /// The rendering `Mode`.
-    mode: Mode,
+    pub mode: Mode,
     /// Maximum line length, in characters/graphemes.
-    line_length: isize,
+    pub line_length: isize,
     /// Number of ribbons per line, where a 'ribbon' is the text on a line
     /// _after_ indentation (which is always spaces).
     ///
     /// A `line_length` of 80 with `ribbnons_per_line` of `2.0` would really
     /// only allow up to 40 characters of a ribbon on a line, while allowing
     /// indentation up to 40 spaces.
-    ribbons_per_line: f32,
+    pub ribbons_per_line: f32,
 }
 
 impl Default for Mode {
@@ -103,6 +103,7 @@ impl<A: Clone> Doc<A> {
         // OPT MMG use a rope or something
         let mut output: Vec<(Text, usize)> = Vec::new();
 
+        eprintln!("rendering");
         self.full_render_ann(style, &mut |ann| match ann {
             Annot::Start => {
                 let span = stack.pop().expect("span stack underflow in render");
@@ -120,6 +121,7 @@ impl<A: Clone> Doc<A> {
                 ));
             }
         });
+        eprintln!("rendered");
 
         // fix up start of span
         for span in &mut spans {
@@ -175,6 +177,7 @@ impl<A: Clone> Doc<A> {
         });
 
         // construct the output string
+        // OPT MMG don't actually reverse, just iterate top down
         // OPT MMG use std::io::Write?
         output.reverse();
         let len = output.iter().map(|(_, len)| len).sum();
@@ -230,9 +233,12 @@ impl<A: Clone> Doc<A> {
                 let ribbon_length: isize =
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as isize;
 
+                eprintln!("calculating layout");
                 let doc = doc.best(line_length, ribbon_length);
 
-                doc.display(style, ribbon_length, txt)
+                eprintln!("calculated layout, displaying");
+                doc.display(style, ribbon_length, txt);
+                eprintln!("displayed");
             }
         }
     }
