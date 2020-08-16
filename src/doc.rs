@@ -575,8 +575,141 @@ impl<A: Clone> Doc<A> {
     pub fn reduce(self) -> Self {
         match self {
             Doc::Beside(d1, b, d2) => d1.mk_beside(b, d2.reduce()),
-            Doc::Above(d1, b, d2) => d1.above(b, d2.reduce()),
+            Doc::Above(d1, b, d2) => d1.above_loop(b, d2.reduce()),
             d => d,
+        }
+    }
+}
+
+enum AboveCont<A: Clone> {
+    Above(Doc<A>, bool),
+}
+
+impl<A: Clone> Doc<A> {
+    pub fn above_loop(self, space: bool, d2: Self) -> Self {
+        use AboveCont::*;
+
+        let mut stack: Vec<AboveCont<A>> = vec![];
+        let mut d1 = self;
+        let mut d2 = d2;
+        let mut space = space;
+
+        loop {
+            match (d1, d2) {
+                (Doc::Empty, d) | (d, Doc::Empty) => 'build: loop {
+                    match stack.pop() {
+                        None => return d,
+                        Some(Above(new_d1, b)) => {
+                            d2 = d;
+                            d1 = new_d1;
+                            space = b;
+                            break 'build;
+                        }
+                    }
+                },
+                (Doc::Above(d11, b, d12), d3) => {
+                    stack.push(Above(*d11, b));
+                    d1 = *d12;
+                    d2 = d3;
+                }
+                (d1i, d2i) => {
+                    let d1r = match d1i {
+                        d1 @ Doc::Beside(..) => d1.reduce(),
+                        d1 => d1,
+                    };
+
+                    // trigger first case above
+                    d1 = d1r.above_nest_loop(space, d2i.reduce());
+                    d2 = Doc::Empty;
+                }
+            }
+        }
+    }
+}
+
+enum AboveNestCont<A: Clone> {
+    UnionR { d12: Doc<A>, new_d2: Doc<A> },
+    UnionDone { lhs: Doc<A> },
+    Nest { old_i: isize, i1: isize },
+    NilAbove,
+    TextBeside { ann: Annot<A>, old_i: isize },
+}
+
+impl<A: Clone> Doc<A> {
+    pub fn above_nest_loop(self, space: bool, d2: Self) -> Self {
+        use AboveNestCont::*;
+
+        let mut stack: Vec<AboveNestCont<A>> = vec![];
+        let mut d1 = self;
+        let mut d2 = d2;
+        let mut i = 0;
+        loop {
+            match d1 {
+                Doc::NoDoc | Doc::Empty => {
+                    if d1.is_empty() {
+                        d1 = d2.mk_nest(i);
+                    }
+
+                    'build: loop {
+                        match stack.pop() {
+                            None => return d1,
+                            Some(UnionR { d12, new_d2 }) => {
+                                stack.push(UnionDone { lhs: d1 });
+                                d1 = d12;
+                                d2 = new_d2;
+                                break 'build;
+                            }
+                            Some(UnionDone { lhs }) => {
+                                d1 = Doc::Union(Box::new(lhs), Box::new(d1));
+                            }
+                            Some(Nest { old_i, i1 }) => {
+                                d1 = Doc::Nest(i1, Box::new(d1));
+                                i = old_i;
+                            }
+                            Some(NilAbove) => {
+                                d1 = Doc::NilAbove(Box::new(d1));
+                            }
+                            Some(TextBeside { ann, old_i }) => {
+                                d1 = Doc::TextBeside(ann, Box::new(d1));
+                                i = old_i;
+                            }
+                        }
+                    }
+                }
+                Doc::Union(d11, d12) => {
+                    d1 = *d11;
+                    stack.push(UnionR {
+                        d12: *d12,
+                        new_d2: d2.clone(),
+                    });
+                }
+                Doc::Nest(i1, d) => {
+                    assert!(
+                        !d.is_empty(),
+                        "invariant says `d1` can't be empty, so no need for `mk_nest`"
+                    );
+                    stack.push(Nest { old_i: i, i1: i1 });
+                    i = i - i1;
+                    d1 = *d;
+                }
+                Doc::NilAbove(d) => {
+                    stack.push(NilAbove);
+                    d1 = *d;
+                }
+                Doc::TextBeside(ann, d) => {
+                    let size = ann.size();
+                    stack.push(TextBeside { ann, old_i: i });
+                    i = i - isize::try_from(size).expect("text too long");
+                    if d.is_empty() {
+                        d1 = Doc::nil_above_nest(space, i, d2);
+                        d2 = Doc::Empty;
+                    } else {
+                        d1 = *d;
+                    }
+                }
+                Doc::Above(..) => panic!("above_nest on Above"),
+                Doc::Beside(..) => panic!("above_nest on Beside"),
+            }
         }
     }
 }

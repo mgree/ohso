@@ -454,4 +454,14 @@ mod tests {
         let doc = PlainDoc::vcat(t.clone());
         assert_eq!(doc.to_string(), t.join("\n").to_string())
     }
+
+    #[test]
+    #[ignore]
+    fn enormous_text() {
+        let t = vec!["hi"; 2000];
+
+        let doc = PlainDoc::vcat(t.clone());
+        eprintln!("built doc");
+        assert_eq!(doc.to_string(), t.join("\n").to_string())
+    }
 }
