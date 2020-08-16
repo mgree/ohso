@@ -19,3 +19,6 @@ jobs:
 
 cache: 
   - cargo
+
+before_install:
+  - ulimit -a
