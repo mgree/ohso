@@ -28,7 +28,7 @@ pub struct Style {
     /// The rendering `Mode`.
     mode: Mode,
     /// Maximum line length, in characters/graphemes.
-    line_length: usize,
+    line_length: isize,
     /// Number of ribbons per line, where a 'ribbon' is the text on a line
     /// _after_ indentation (which is always spaces).
     ///
@@ -61,19 +61,19 @@ impl Default for Style {
 /// how far it goes, and the annotation itself.
 #[derive(Clone)]
 pub struct Span<A: Clone> {
-    start: usize,
-    length: usize,
+    start: isize,
+    length: isize,
     annotation: A,
 }
 
 #[derive(Clone)]
 struct OpenSpan<A: Clone> {
-    end: usize,
+    end: isize,
     annotation: A,
 }
 
 impl<A: Clone> OpenSpan<A> {
-    fn start(self, start: usize) -> Span<A> {
+    fn start(self, start: isize) -> Span<A> {
         Span {
             start,
             length: start - self.end,
@@ -96,7 +96,7 @@ impl<A: Clone> std::fmt::Display for Doc<A> {
 impl<A: Clone> Doc<A> {
     pub fn render(&self, style: &Style) -> (String, Vec<Span<A>>) {
         // this is offset _from the end_
-        let mut offset: usize = 0;
+        let mut offset: isize = 0;
         let mut stack: Vec<OpenSpan<A>> = Vec::new();
         let mut spans: Vec<Span<A>> = Vec::new();
         // stored in reverse order
@@ -114,7 +114,10 @@ impl<A: Clone> Doc<A> {
             }),
             Annot::Text(txt, len) => {
                 offset += len;
-                output.push((txt.clone(), *len));
+                output.push((
+                    txt.clone(),
+                    usize::try_from(*len).expect("positive text length"),
+                ));
             }
         });
 
@@ -126,7 +129,7 @@ impl<A: Clone> Doc<A> {
         // construct the output string
         // OPT MMG use std::io::Write?
         output.reverse();
-        let len = output.iter().map(|(_, len)| len).sum();
+        let len = output.iter().map(|(_, len)| *len).sum();
         let mut rendered = String::new();
         rendered.reserve(len);
 
@@ -145,7 +148,7 @@ impl<A: Clone> Doc<A> {
         F: FnMut(&A) -> &str,
     {
         // this is offset _from the end_
-        let mut offset: usize = 0;
+        let mut offset: isize = 0;
         let mut stack: Vec<A> = Vec::new();
         let mut output: Vec<(Text, usize)> = Vec::new();
 
@@ -164,7 +167,10 @@ impl<A: Clone> Doc<A> {
             }
             Annot::Text(txt, len) => {
                 offset += len;
-                output.push((txt.clone(), *len));
+                output.push((
+                    txt.clone(),
+                    usize::try_from(*len).expect("positive string length"),
+                ));
             }
         });
 
@@ -218,11 +224,11 @@ impl<A: Clone> Doc<A> {
             Mode::Left => doc.easy_display(Annot::newline(), Policy::First, txt),
             Mode::Page | Mode::ZigZag => {
                 let line_length = match style.mode {
-                    Mode::ZigZag => usize::MAX,
+                    Mode::ZigZag => isize::MAX,
                     _ => style.line_length,
                 };
-                let ribbon_length: usize =
-                    (style.line_length as f32 / style.ribbons_per_line as f32).round() as usize;
+                let ribbon_length: isize =
+                    (style.line_length as f32 / style.ribbons_per_line as f32).round() as isize;
 
                 doc.best(line_length, ribbon_length)
                     .display(style, ribbon_length, txt)
@@ -267,7 +273,7 @@ impl<A: Clone> D<A> {
         }
     }
 
-    pub fn display<F>(&self, style: &Style, ribbon_length: usize, txt: &mut F)
+    pub fn display<F>(&self, style: &Style, ribbon_length: isize, txt: &mut F)
     where
         F: FnMut(&Annot<A>) -> (),
     {
@@ -277,18 +283,12 @@ impl<A: Clone> D<A> {
         self.lay(style, gap_width, shift, 0, txt)
     }
 
-    fn lay<F>(&self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
+    fn lay<F>(&self, style: &Style, gap_width: isize, shift: isize, k: isize, txt: &mut F)
     where
         F: FnMut(&Annot<A>) -> (),
     {
         match self {
-            D::Nest(k1, d) => d.lay(
-                style,
-                gap_width,
-                shift,
-                k + usize::try_from(*k1).expect("positive"),
-                txt,
-            ),
+            D::Nest(k1, d) => d.lay(style, gap_width, shift, k + *k1, txt),
             D::Empty => (),
             D::NilAbove(d) => {
                 d.lay(style, gap_width, shift, k, txt);
@@ -296,11 +296,13 @@ impl<A: Clone> D<A> {
             }
             D::TextBeside(ann, d) => match style.mode {
                 Mode::ZigZag => {
+                    let ushift = usize::try_from(shift).expect("positive shift");
+
                     if k >= gap_width {
                         d.lay1(style, gap_width, shift, k - shift, ann, txt);
                         txt(&Annot::newline());
                         txt(&Annot::Text(
-                            Text::Str(std::iter::repeat('/').take(shift).collect()),
+                            Text::Str(std::iter::repeat('/').take(ushift).collect()),
                             shift,
                         ));
 
@@ -309,7 +311,7 @@ impl<A: Clone> D<A> {
                         d.lay1(style, gap_width, shift, k + shift, ann, txt);
                         txt(&Annot::newline());
                         txt(&Annot::Text(
-                            Text::Str(std::iter::repeat('\\').take(shift).collect()),
+                            Text::Str(std::iter::repeat('\\').take(ushift).collect()),
                             shift,
                         ));
                         txt(&Annot::newline());
@@ -327,9 +329,9 @@ impl<A: Clone> D<A> {
     fn lay1<F>(
         &self,
         style: &Style,
-        gap_width: usize,
-        shift: usize,
-        k: usize,
+        gap_width: isize,
+        shift: isize,
+        k: isize,
         ann: &Annot<A>,
         txt: &mut F,
     ) where
@@ -340,7 +342,7 @@ impl<A: Clone> D<A> {
         txt(&Annot::indent(k));
     }
 
-    fn lay2<F>(&self, style: &Style, gap_width: usize, shift: usize, k: usize, txt: &mut F)
+    fn lay2<F>(&self, style: &Style, gap_width: isize, shift: isize, k: isize, txt: &mut F)
     where
         F: FnMut(&Annot<A>) -> (),
     {
@@ -362,7 +364,7 @@ impl<A: Clone> D<A> {
         }
     }
 
-    pub fn best(self, line_length: usize, ribbon_length: usize) -> Self {
+    pub fn best(self, line_length: isize, ribbon_length: isize) -> Self {
         match self {
             D::Empty => D::Empty,
             D::NoDoc => D::NoDoc,
@@ -372,9 +374,9 @@ impl<A: Clone> D<A> {
                 D::TextBeside(ann, Box::new(d.best1(line_length, ribbon_length, size)))
             }
             D::Nest(i, d) => {
-                let indent = line_length as isize - i;
-                assert!(indent >= 0, "positive indent");                
-                D::Nest(i, Box::new(d.best(indent as usize, ribbon_length)))
+                let indent = line_length - i;
+                assert!(indent >= 0, "positive indent");
+                D::Nest(i, Box::new(d.best(indent, ribbon_length)))
             }
             D::Union(d1, d2) => D::nicest(
                 d1.best(line_length, ribbon_length),
@@ -388,7 +390,7 @@ impl<A: Clone> D<A> {
         }
     }
 
-    fn best1(self, line_length: usize, ribbon_length: usize, sl: usize) -> Self {
+    fn best1(self, line_length: isize, ribbon_length: isize, sl: isize) -> Self {
         match self {
             D::Empty => D::Empty,
             D::NoDoc => D::NoDoc,
@@ -413,7 +415,7 @@ impl<A: Clone> D<A> {
         }
     }
 
-    fn nicest(d1: Self, d2: Self, line_length: usize, ribbon_length: usize, sl: usize) -> Self {
+    fn nicest(d1: Self, d2: Self, line_length: isize, ribbon_length: isize, sl: isize) -> Self {
         if d1.fits(
             (std::cmp::min(line_length, ribbon_length) - sl)
                 .try_into()

@@ -1,5 +1,6 @@
 mod doc;
 mod render;
+use std::convert::TryFrom;
 pub use doc::Annot;
 pub use doc::Text;
 pub use render::*;
@@ -73,7 +74,10 @@ impl<A: Clone> Doc<A> {
     pub fn text<S: ToString>(s: S) -> Self {
         let s = s.to_string();
         let len = s.chars().count();
-        Doc(D::sized_text(s, len))
+        Doc(D::sized_text(
+            s,
+            isize::try_from(len).expect("text too long"),
+        ))
     }
 
     /// A `Doc` of text with zero width. Useful for non-printing text, like
@@ -84,7 +88,10 @@ impl<A: Clone> Doc<A> {
 
     /// A `Doc` of text with the given width.
     pub fn sized_text(s: String, len: usize) -> Self {
-        Doc(D::sized_text(s, len))
+        Doc(D::sized_text(
+            s,
+            isize::try_from(len).expect("text too long"),
+        ))
     }
 
     /// The empty `Doc`.
@@ -432,7 +439,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn vcat() {
         assert_eq!(
             PlainDoc::vcat(vec!["one", "2", "iii"]).to_string(),

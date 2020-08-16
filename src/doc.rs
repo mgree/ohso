@@ -1,7 +1,5 @@
 use std::convert::TryFrom;
 
-// TODO MMG get rid of usize, since too many things go temporarily negative.
-
 /// Documents. `A` is the type of annotations.
 ///
 /// Here are the invariants (copied verbatim from the Haskell documentation):
@@ -63,7 +61,7 @@ where
     A: Clone,
 {
     Start,
-    Text(Text, usize),
+    Text(Text, isize),
     End(A),
 }
 
@@ -109,7 +107,7 @@ impl<A: Clone> Doc<A> {
         Doc::TextBeside(Annot::Text(Text::Char(c), 1), Box::new(Doc::Empty))
     }
 
-    pub fn sized_text(s: String, len: usize) -> Self {
+    pub fn sized_text(s: String, len: isize) -> Self {
         Doc::TextBeside(Annot::Text(Text::Str(s), len), Box::new(Doc::Empty))
     }
 
@@ -126,7 +124,7 @@ impl<A: Clone> Doc<A> {
     /// It is an (unchecked, internal) invariant that the two layouts flatten
     /// into the same text; the only difference should be in spacing and
     /// horizontal/vertical layout.
-    /// 
+    ///
     /// Corresponds to mkUnion
     pub fn union(self, d2: Self) -> Self {
         match (self, d2) {
@@ -254,7 +252,7 @@ impl<A: Clone> Doc<A> {
             Doc::Empty => Doc::Empty,
             Doc::Nest(k, d2) => Doc::nil_above_nest(space, i + k, *d2),
             d2 if !space && i > 0 => Doc::TextBeside(
-                Annot::indent(usize::try_from(i).expect("positive")),
+                Annot::indent(isize::try_from(i).expect("positive")),
                 Box::new(d2),
             ),
             d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
@@ -585,7 +583,7 @@ impl<A: Clone> Doc<A> {
 
 impl<A: Clone> Annot<A> {
     /// The size of an annotation. Looks only at the text parts (`Annot::Text`).
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> isize {
         match self {
             Annot::Text(_txt, l) => *l,
             Annot::Start | Annot::End(_) => 0,
@@ -612,9 +610,13 @@ impl<A: Clone> Annot<A> {
         Annot::Text(Text::Char('\n'), 1)
     }
 
-    pub fn indent(i: usize) -> Self {
+    pub fn indent(i: isize) -> Self {
         Annot::Text(
-            Text::Str(std::iter::repeat(' ').take(i).collect::<String>()),
+            Text::Str(
+                std::iter::repeat(' ')
+                    .take(usize::try_from(i).expect("positive indent"))
+                    .collect::<String>(),
+            ),
             i,
         )
     }
