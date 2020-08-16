@@ -10,7 +10,7 @@ type D<A> = doc::Doc<A>;
 /// The type of pretty-printable documents.
 pub struct Doc<A: Clone>(D<A>);
 
-pub trait ToDoc<A: Clone> {
+pub trait Pretty<A: Clone> {
     fn to_doc(self) -> Doc<A>;
 }
 
@@ -23,7 +23,7 @@ macro_rules! conversion {
             }
         }
 
-        impl<A: Clone> ToDoc<A> for $T {
+        impl<A: Clone> Pretty<A> for $T {
             /// Macro-generated, automatic conversion from `$T` to `Doc`. Calls
             /// `Doc::$id`.
             fn to_doc(self) -> Doc<A> {
@@ -111,7 +111,7 @@ impl<A: Clone> Doc<A> {
     /// `d1.append(d2)` is the same as `d1.beside(false, d2)`
     ///
     /// This is the `(<>)` operation in Haskell.
-    pub fn append<T: ToDoc<A>>(self, d2: T) -> Self {
+    pub fn append<T: Pretty<A>>(self, d2: T) -> Self {
         Doc(self.0.beside(false, d2.to_doc().0))
     }
 
@@ -121,14 +121,14 @@ impl<A: Clone> Doc<A> {
     /// `d1.append_(d2)` is the same as `d1.beside(true, d2)`
     ///
     /// This is the `(<+>)` operation in Haskell.
-    pub fn append_<T: ToDoc<A>>(self, d2: T) -> Self {
+    pub fn append_<T: Pretty<A>>(self, d2: T) -> Self {
         Doc(self.0.beside(true, d2.to_doc().0))
     }
 
     /// Put this document above `d2`, requiring vertical space---no overlap.
     ///
     /// This is the `($+$)` operation in Haskell.
-    pub fn over<T: ToDoc<A>>(self, d2: T) -> Self {
+    pub fn over<T: Pretty<A>>(self, d2: T) -> Self {
         Doc(self.0.above(true, d2.to_doc().0))
     }
 
@@ -136,7 +136,7 @@ impl<A: Clone> Doc<A> {
     /// with overlapping.
     ///
     /// This is the `($$)` operation in Haskell.
-    pub fn overlap<T: ToDoc<A>>(self, d2: T) -> Self {
+    pub fn overlap<T: Pretty<A>>(self, d2: T) -> Self {
         Doc(self.0.above(false, d2.to_doc().0))
     }
 
@@ -147,7 +147,7 @@ impl<A: Clone> Doc<A> {
     pub fn sep<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::sep_x(true, docs.into_iter().map(|d| d.to_doc().0)))
     }
@@ -159,7 +159,7 @@ impl<A: Clone> Doc<A> {
     pub fn cat<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::sep_x(false, docs.into_iter().map(|d| d.to_doc().0)))
     }
@@ -168,7 +168,7 @@ impl<A: Clone> Doc<A> {
     pub fn hsep<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::hsep(docs.into_iter().map(|d| d.to_doc().0)))
     }
@@ -177,7 +177,7 @@ impl<A: Clone> Doc<A> {
     pub fn hcat<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::hcat(docs.into_iter().map(|d| d.to_doc().0)))
     }
@@ -186,7 +186,7 @@ impl<A: Clone> Doc<A> {
     pub fn vcat<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::vcat(docs.into_iter().map(|d| d.to_doc().0)))
     }
@@ -203,7 +203,7 @@ impl<A: Clone> Doc<A> {
     pub fn fsep<I, T>(docs: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         Doc(D::fill(docs.into_iter().map(|d| d.to_doc().0), true))
     }
@@ -211,7 +211,7 @@ impl<A: Clone> Doc<A> {
     /// Hangs `d2` off `d1`, indented by `i`.
     ///
     /// `d1.hang(i, d2)` is the same as `Doc::sep(vec![self, d2.nest(i)])`
-    pub fn hang<T: ToDoc<A>>(self, i: isize, d2: T) -> Self {
+    pub fn hang<T: Pretty<A>>(self, i: isize, d2: T) -> Self {
         Doc(D::sep_x(true, vec![self.0, d2.to_doc().0.nest(i)]))
     }
 
@@ -220,7 +220,7 @@ impl<A: Clone> Doc<A> {
     pub fn punctuate<I, T>(self, docs: I) -> Vec<Self>
     where
         I: IntoIterator<Item = T>,
-        T: ToDoc<A>,
+        T: Pretty<A>,
     {
         self.0
             .punctuate(docs.into_iter().map(|d| d.to_doc().0))
@@ -294,25 +294,25 @@ conversion!(u128, u128);
 conversion!(f32, f32);
 conversion!(f64, f64);
 
-impl<A: Clone> ToDoc<A> for char {
+impl<A: Clone> Pretty<A> for char {
     fn to_doc(self) -> Doc<A> {
         Doc::char(self)
     }
 }
 
-impl<A: Clone> ToDoc<A> for String {
+impl<A: Clone> Pretty<A> for String {
     fn to_doc(self) -> Doc<A> {
         Doc::text(self)
     }
 }
 
-impl<A: Clone> ToDoc<A> for &str {
+impl<A: Clone> Pretty<A> for &str {
     fn to_doc(self) -> Doc<A> {
         Doc::text(self.to_string())
     }
 }
 
-impl<A: Clone> ToDoc<A> for Doc<A> {
+impl<A: Clone> Pretty<A> for Doc<A> {
     fn to_doc(self) -> Doc<A> {
         self
     }
@@ -345,7 +345,7 @@ mod tests {
         );
 
         assert_eq!(
-            ToDoc::<()>::to_doc("hell").append("o").to_string(),
+            Pretty::<()>::to_doc("hell").append("o").to_string(),
             "hello".to_string()
         );
 
