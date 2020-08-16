@@ -392,7 +392,7 @@ impl<A: Clone> Doc<A> {
         };
 
         for d2 in docs {
-            d1 = Doc::Above(Box::new(d1), false, Box::new(d2));
+            d1 = Doc::Above(Box::new(d1), false, Box::new(d2)); // OPT MMG? d1.above(false, d2)
         }
 
         d1.reduce_vert()

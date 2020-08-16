@@ -1,9 +1,9 @@
 mod doc;
 mod render;
-use std::convert::TryFrom;
 pub use doc::Annot;
 pub use doc::Text;
 pub use render::*;
+use std::convert::TryFrom;
 
 type D<A> = doc::Doc<A>;
 
@@ -444,5 +444,14 @@ mod tests {
             PlainDoc::vcat(vec!["one", "2", "iii"]).to_string(),
             "one\n2\niii".to_string()
         )
+    }
+
+    #[test]
+    fn huge_text() {
+        // anything bigger overflows 8MB stack
+        let t = vec!["hi"; 1020];
+
+        let doc = PlainDoc::vcat(t.clone());
+        assert_eq!(doc.to_string(), t.join("\n").to_string())
     }
 }

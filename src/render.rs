@@ -1,4 +1,4 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use crate::doc::{Annot, Text};
 
@@ -230,8 +230,9 @@ impl<A: Clone> Doc<A> {
                 let ribbon_length: isize =
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as isize;
 
-                doc.best(line_length, ribbon_length)
-                    .display(style, ribbon_length, txt)
+                let doc = doc.best(line_length, ribbon_length);
+
+                doc.display(style, ribbon_length, txt)
             }
         }
     }
@@ -363,68 +364,129 @@ impl<A: Clone> D<A> {
             D::Union(..) => panic!("lay2 on Union"),
         }
     }
+}
 
+// continuations for `best`
+enum BestCont<A: Clone> {
+    NilAbove { line_length: isize },
+    TextBeside(Annot<A>),
+    Nest { line_length: isize, i: isize },
+    Union(D<A>),
+}
+
+enum BestInnerCont<A: Clone> {
+    TextBeside { ann: Annot<A>, sl: isize },
+    Union(D<A>),
+}
+
+impl<A: Clone> D<A> {
     pub fn best(self, line_length: isize, ribbon_length: isize) -> Self {
-        match self {
-            D::Empty => D::Empty,
-            D::NoDoc => D::NoDoc,
-            D::NilAbove(d) => D::NilAbove(Box::new(d.best(line_length, ribbon_length))),
-            D::TextBeside(ann, d) => {
-                let size = ann.size();
-                D::TextBeside(ann, Box::new(d.best1(line_length, ribbon_length, size)))
-            }
-            D::Nest(i, d) => {
-                let indent = line_length - i;
-                assert!(indent >= 0, "positive indent");
-                D::Nest(i, Box::new(d.best(indent, ribbon_length)))
-            }
-            D::Union(d1, d2) => D::nicest(
-                d1.best(line_length, ribbon_length),
-                d2.best(line_length, ribbon_length),
-                line_length,
-                ribbon_length,
-                0, /* no indent */
-            ),
-            D::Above(..) => panic!("best on Above"),
-            D::Beside(..) => panic!("best on Beside"),
-        }
-    }
+        use BestCont::*;
+        let mut stack: Vec<BestCont<A>> = vec![];
 
-    fn best1(self, line_length: isize, ribbon_length: isize, sl: isize) -> Self {
-        match self {
-            D::Empty => D::Empty,
-            D::NoDoc => D::NoDoc,
-            D::NilAbove(d) => D::NilAbove(Box::new(d.best(line_length - sl, ribbon_length))),
-            D::TextBeside(ann, d) => {
-                let size = ann.size();
-                D::TextBeside(
-                    ann,
-                    Box::new(d.best1(line_length, ribbon_length, sl + size)),
-                )
-            }
-            D::Nest(_, d) => d.best1(line_length, ribbon_length, sl),
-            D::Union(d1, d2) => D::nicest(
-                d1.best1(line_length, ribbon_length, sl),
-                d2.best1(line_length, ribbon_length, sl),
-                line_length,
-                ribbon_length,
-                sl,
-            ),
-            D::Above(..) => panic!("best1 on Above"),
-            D::Beside(..) => panic!("best1 on Beside"),
-        }
-    }
+        let mut line_length = line_length;
+        let mut doc = self;
+        'best: loop {
+            match doc {
+                D::Empty | D::NoDoc => 'build: loop {
+                    match stack.pop() {
+                        None => break 'best,
+                        Some(NilAbove { line_length: ll }) => {
+                            doc = D::NilAbove(Box::new(doc));
+                            line_length = ll;
+                        }
+                        Some(TextBeside(ann)) => doc = D::TextBeside(ann, Box::new(doc)),
+                        Some(Nest { line_length: ll, i }) => {
+                            doc = D::Nest(i, Box::new(doc));
+                            line_length = ll;
+                        }
+                        Some(Union(d2)) => {
+                            if doc.fits(std::cmp::min(line_length, ribbon_length)) {
+                                continue;
+                            } else {
+                                doc = d2;
+                                break 'build;
+                            }
+                        }
+                    }
+                },
+                D::NilAbove(d) => {
+                    doc = *d;
+                    stack.push(NilAbove { line_length });
+                }
+                D::TextBeside(ann, d) => {
+                    let mut sl = ann.size();
+                    stack.push(TextBeside(ann));
 
-    fn nicest(d1: Self, d2: Self, line_length: isize, ribbon_length: isize, sl: isize) -> Self {
-        if d1.fits(
-            (std::cmp::min(line_length, ribbon_length) - sl)
-                .try_into()
-                .expect("text too long"),
-        ) {
-            d1
-        } else {
-            d2
+                    {
+                        use BestInnerCont::*;
+
+                        let mut inner_stack: Vec<BestInnerCont<A>> = vec![];
+                        let mut inner_doc = *d;
+                        'best1: loop {
+                            match inner_doc {
+                                D::Empty | D::NoDoc => 'best1_build: loop {
+                                    match inner_stack.pop() {
+                                        None => {
+                                            doc = inner_doc;
+                                            break 'best1;
+                                        }
+                                        Some(TextBeside { ann, sl: old_sl }) => {
+                                            sl = old_sl;
+                                            inner_doc = D::TextBeside(ann, Box::new(inner_doc));
+                                        }
+                                        Some(Union(d2)) => {
+                                            if inner_doc.fits(
+                                                std::cmp::min(line_length, ribbon_length) - sl,
+                                            ) {
+                                                continue;
+                                            } else {
+                                                inner_doc = d2;
+                                                break 'best1_build;
+                                            }
+                                        }
+                                    }
+                                },
+                                D::NilAbove(d) => {
+                                    stack.push(BestCont::NilAbove {
+                                        line_length: line_length - sl,
+                                    });
+                                    doc = *d;
+                                    break 'best1;
+                                }
+                                D::TextBeside(ann, d) => {
+                                    sl = sl + ann.size();
+                                    inner_stack.push(TextBeside { ann, sl });
+                                    inner_doc = *d;
+                                }
+                                D::Nest(_, d) => {
+                                    inner_doc = *d;
+                                }
+                                D::Union(d1, d2) => {
+                                    inner_doc = *d1;
+                                    inner_stack.push(Union(*d2));
+                                }
+                                D::Above(..) => panic!("best1 on Above"),
+                                D::Beside(..) => panic!("best1 on Beside"),
+                            }
+                        }
+                    }
+                }
+                D::Nest(i, d) => {
+                    doc = *d;
+                    stack.push(Nest { line_length, i });
+                    line_length = line_length - i;
+                }
+                D::Union(d1, d2) => {
+                    doc = *d1;
+                    stack.push(Union(*d2));
+                }
+                D::Above(..) => panic!("best on Above"),
+                D::Beside(..) => panic!("best on Beside"),
+            }
         }
+
+        doc
     }
 
     fn fits(&self, len: isize) -> bool {
