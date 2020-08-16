@@ -456,6 +456,37 @@ mod tests {
     }
 
     #[test]
+    fn huge_text_left() {
+        // anything bigger overflows 8MB stack
+        let t = vec!["hi"; 1815];
+
+        let doc = PlainDoc::vcat(t.clone());
+        assert_eq!(
+            doc.render(&Style {
+                mode: Mode::Left,
+                ..Style::default()
+            }).0,
+            t.join("\n").to_string()
+        )
+    }
+
+    #[test]
+    fn huge_text_oneline() {
+        // anything bigger overflows 8MB stack
+        let t = vec!["hi"; 1815];
+
+        let doc = PlainDoc::vcat(t.clone());
+        assert_eq!(
+            doc.render(&Style {
+                mode: Mode::OneLine,
+                ..Style::default()
+            }).0,
+            t.join(" ").to_string()
+        )
+    }
+
+
+    #[test]
     #[ignore]
     fn enormous_text() {
         let t = vec!["hi"; 2000];

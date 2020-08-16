@@ -208,57 +208,6 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    /// Put one `Doc` above another.
-    pub fn above(self, space: bool, d2: Self) -> Self {
-        match (self, d2) {
-            (Doc::Empty, d) | (d, Doc::Empty) => d,
-            (Doc::Above(d1, b, d2), d3) => d1.above(b, d2.above(space, d3)),
-            (d1 @ Doc::Beside(..), d2) => d1.reduce().above_nest(space, 0, d2.reduce()),
-            (d1, d2) => d1.above_nest(space, 0, d2.reduce()),
-        }
-    }
-
-    fn above_nest(self, space: bool, i: isize, d2: Self) -> Self {
-        match self {
-            Doc::NoDoc => Doc::NoDoc,
-            Doc::Union(d11, d12) => Doc::Union(
-                Box::new(d11.above_nest(space, i, d2.clone())),
-                Box::new(d12.above_nest(space, i, d2)),
-            ),
-            Doc::Empty => d2.mk_nest(i),
-            Doc::Nest(i1, d1) => {
-                assert!(!d1.is_empty()); // invariant says `d1` can't be empty, so no need for `mk_nest`
-                Doc::Nest(i1, Box::new(d1.above_nest(space, i - i1, d2)))
-            }
-            Doc::NilAbove(d) => Doc::NilAbove(Box::new(d.above_nest(space, i, d2))),
-            Doc::TextBeside(ann, d1) => {
-                let i = i - isize::try_from(ann.size()).expect("text too long");
-                Doc::TextBeside(
-                    ann,
-                    Box::new(if d1.is_empty() {
-                        Doc::nil_above_nest(space, i, d2)
-                    } else {
-                        d1.above_nest(space, i, d2)
-                    }),
-                )
-            }
-            Doc::Above(..) => panic!("above_nest on Above"),
-            Doc::Beside(..) => panic!("above_nest on Beside"),
-        }
-    }
-
-    fn nil_above_nest(space: bool, i: isize, d2: Self) -> Self {
-        match d2 {
-            Doc::Empty => Doc::Empty,
-            Doc::Nest(k, d2) => Doc::nil_above_nest(space, i + k, *d2),
-            d2 if !space && i > 0 => Doc::TextBeside(
-                Annot::indent(isize::try_from(i).expect("positive")),
-                Box::new(d2),
-            ),
-            d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
-        }
-    }
-
     pub fn sep_x<I>(spaces: bool, docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
@@ -575,7 +524,7 @@ impl<A: Clone> Doc<A> {
     pub fn reduce(self) -> Self {
         match self {
             Doc::Beside(d1, b, d2) => d1.mk_beside(b, d2.reduce()),
-            Doc::Above(d1, b, d2) => d1.above_loop(b, d2.reduce()),
+            Doc::Above(d1, b, d2) => d1.above(b, d2.reduce()),
             d => d,
         }
     }
@@ -586,7 +535,8 @@ enum AboveCont<A: Clone> {
 }
 
 impl<A: Clone> Doc<A> {
-    pub fn above_loop(self, space: bool, d2: Self) -> Self {
+    /// Put one `Doc` above another.
+    pub fn above(self, space: bool, d2: Self) -> Self {
         use AboveCont::*;
 
         let mut stack: Vec<AboveCont<A>> = vec![];
@@ -619,7 +569,7 @@ impl<A: Clone> Doc<A> {
                     };
 
                     // trigger first case above
-                    d1 = d1r.above_nest_loop(space, d2i.reduce());
+                    d1 = d1r.above_nest(space, 0, d2i.reduce());
                     d2 = Doc::Empty;
                 }
             }
@@ -636,13 +586,13 @@ enum AboveNestCont<A: Clone> {
 }
 
 impl<A: Clone> Doc<A> {
-    pub fn above_nest_loop(self, space: bool, d2: Self) -> Self {
+    pub fn above_nest(self, space: bool, i: isize, d2: Self) -> Self {
         use AboveNestCont::*;
 
         let mut stack: Vec<AboveNestCont<A>> = vec![];
         let mut d1 = self;
         let mut d2 = d2;
-        let mut i = 0;
+        let mut i = i;
         loop {
             match d1 {
                 Doc::NoDoc | Doc::Empty => {
@@ -710,6 +660,18 @@ impl<A: Clone> Doc<A> {
                 Doc::Above(..) => panic!("above_nest on Above"),
                 Doc::Beside(..) => panic!("above_nest on Beside"),
             }
+        }
+    }
+
+    fn nil_above_nest(space: bool, i: isize, d2: Self) -> Self {
+        match d2 {
+            Doc::Empty => Doc::Empty,
+            Doc::Nest(k, d2) => Doc::nil_above_nest(space, i + k, *d2),
+            d2 if !space && i > 0 => Doc::TextBeside(
+                Annot::indent(isize::try_from(i).expect("positive")),
+                Box::new(d2),
+            ),
+            d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
         }
     }
 }

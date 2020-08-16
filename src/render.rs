@@ -26,16 +26,16 @@ pub enum Mode {
 #[derive(Clone, Copy)]
 pub struct Style {
     /// The rendering `Mode`.
-    mode: Mode,
+    pub mode: Mode,
     /// Maximum line length, in characters/graphemes.
-    line_length: isize,
+    pub line_length: isize,
     /// Number of ribbons per line, where a 'ribbon' is the text on a line
     /// _after_ indentation (which is always spaces).
     ///
     /// A `line_length` of 80 with `ribbnons_per_line` of `2.0` would really
     /// only allow up to 40 characters of a ribbon on a line, while allowing
     /// indentation up to 40 spaces.
-    ribbons_per_line: f32,
+    pub ribbons_per_line: f32,
 }
 
 impl Default for Mode {
