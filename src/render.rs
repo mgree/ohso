@@ -295,9 +295,10 @@ impl<A: Clone> D<A> {
         let gap_width = style.line_length - ribbon_length;
         let shift = gap_width / 2;
 
-        self.lay(style, gap_width, shift, 0, txt)
+        self.lay_loop(style, gap_width, shift, 0, txt)
     }
 
+    #[allow(dead_code)]
     fn lay<F>(&self, style: &Style, gap_width: isize, shift: isize, k: isize, txt: &mut F)
     where
         F: FnMut(&Annot<A>) -> (),
@@ -513,6 +514,138 @@ impl<A: Clone> D<A> {
             D::Union(..) => panic!("fits on Union"),
             D::Above(..) => panic!("fits on Above"),
             D::Beside(..) => panic!("fits on Beside"),
+        }
+    }
+}
+
+enum LayCont<'a, A: Clone> {
+    NilAbove,
+    BesideZigZag { forward: bool },
+    Ann { ann: &'a Annot<A>, indent: isize }, // from a call to lay1
+    InnerTextBeside { ann: &'a Annot<A> },
+}
+
+impl<A: Clone> D<A> {
+    fn lay_loop<'a, F>(
+        &'a self,
+        style: &Style,
+        gap_width: isize,
+        shift: isize,
+        k: isize,
+        txt: &mut F,
+    ) where
+        F: FnMut(&Annot<A>) -> (),
+    {
+        use LayCont::*;
+        let mut stack: Vec<LayCont<'a, A>> = vec![];
+        let mut doc = self;
+        let mut k = k;
+
+        loop {
+            match doc {
+                D::Empty => loop {
+                    match stack.pop() {
+                        None => return,
+                        Some(InnerTextBeside { ann }) => {
+                            txt(ann);
+                        }
+                        Some(NilAbove) => {
+                            txt(&Annot::newline());
+                        }
+                        Some(BesideZigZag { forward }) => {
+                            let nl = Annot::newline();
+                            txt(&nl);
+
+                            let ushift = usize::try_from(shift).expect("positive shift");
+                            txt(&Annot::Text(
+                                Text::Str(
+                                    std::iter::repeat(if forward { '/' } else { '\\' })
+                                        .take(ushift)
+                                        .collect(),
+                                ),
+                                shift,
+                            ));
+
+                            txt(&nl);
+                        }
+                        Some(Ann { ann, indent }) => {
+                            txt(ann);
+                            txt(&Annot::indent(indent));
+                        }
+                    }
+                },
+                D::Nest(k1, d) => {
+                    k = k + *k1;
+                    doc = d;
+                }
+                D::NilAbove(d) => {
+                    stack.push(NilAbove);
+                    doc = d;
+                }
+                D::TextBeside(ann, d) => {
+                    let old_k = k;
+                    k = match style.mode {
+                        Mode::ZigZag => {
+                            let forward = k >= gap_width;
+                            stack.push(BesideZigZag { forward });
+
+                            if forward {
+                                k - shift
+                            } else {
+                                k + shift
+                            }
+                        }
+                        _ => k,
+                    };
+
+                    stack.push(Ann { ann, indent: k });
+                    k = k + ann.size();
+
+                    let mut inner_stack: Vec<LayCont<'a, A>> = vec![];
+                    let mut inner_doc = d.as_ref();
+                    'lay2: loop {
+                        match inner_doc {
+                            D::Empty => loop {
+                                match inner_stack.pop() {
+                                    None => {
+                                        doc = inner_doc;
+                                        break 'lay2;
+                                    }
+                                    Some(InnerTextBeside { ann }) => {
+                                        txt(ann);
+                                        k = old_k;
+                                    }
+                                    Some(NilAbove)
+                                    | Some(BesideZigZag { .. })
+                                    | Some(Ann { .. }) => panic!("lay2 loop: outer cont"),
+                                }
+                            },
+                            D::NilAbove(d) => {
+                                stack.extend(inner_stack);
+                                stack.push(NilAbove);
+                                doc = d.as_ref();
+                                break 'lay2;
+                            }
+                            D::TextBeside(ann, d) => {
+                                k = k + ann.size();
+                                inner_stack.push(InnerTextBeside { ann });
+                                inner_doc = d.as_ref();
+                            }
+                            D::Nest(_, d) => {
+                                inner_doc = d.as_ref();
+                            }
+                            D::Above(..) => panic!("lay2 on Above"),
+                            D::Beside(..) => panic!("lay2 on Beside"),
+                            D::NoDoc => panic!("lay2 on NoDoc"),
+                            D::Union(..) => panic!("lay2 on Union"),
+                        }
+                    }
+                }
+                D::Above(..) => panic!("display on Above"),
+                D::Beside(..) => panic!("display on Beside"),
+                D::NoDoc => panic!("display on NoDoc"),
+                D::Union(..) => panic!("display on Union"),
+            }
         }
     }
 }
