@@ -255,28 +255,36 @@ impl<A: Clone> D<A> {
     where
         F: FnMut(&Annot<A>) -> (),
     {
-        match self {
-            D::Union(d1, d2) => {
-                let choice = match policy {
-                    Policy::First => D::first(d1, d2),
-                    Policy::Second => d2,
-                };
+        let mut stack: Vec<&Annot<A>> = vec![];
+        let mut doc = self;
 
-                choice.easy_display(nl_space, policy, txt)
+        loop {
+            match doc {
+                D::Empty => {
+                    for ann in stack.iter() {
+                        txt(ann);
+                    }
+                    return;
+                }
+                D::Union(d1, d2) => {
+                    doc = match policy {
+                        Policy::First => D::first(d1, d2),
+                        Policy::Second => d2,
+                    };
+                }
+                D::Nest(_, d) => doc = d,
+                D::NilAbove(d) => {
+                    doc = d;
+                    stack.push(&nl_space);
+                }
+                D::TextBeside(ann, d) => {
+                    doc = d;
+                    stack.push(ann);
+                }
+                D::Above(..) => panic!("easy_display on Above"),
+                D::Beside(..) => panic!("easy_display on Beside"),
+                D::NoDoc => panic!("easy_display on NoDoc"),
             }
-            D::Nest(_, d) => d.easy_display(nl_space, policy, txt),
-            D::Empty => (),
-            D::NilAbove(d) => {
-                d.easy_display(nl_space.clone(), policy, txt);
-                txt(&nl_space);
-            }
-            D::TextBeside(ann, d) => {
-                d.easy_display(nl_space, policy, txt);
-                txt(ann);
-            }
-            D::Above(..) => panic!("easy_display on Above"),
-            D::Beside(..) => panic!("easy_display on Beside"),
-            D::NoDoc => panic!("easy_display on NoDoc"),
         }
     }
 
