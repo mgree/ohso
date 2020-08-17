@@ -220,7 +220,6 @@ impl<A: Clone> Doc<A> {
     where
         F: FnMut(&Annot<A>) -> (),
     {
-        // OPT MMG ugh, this clone :(
         let doc = &self.0.as_reduced();
         assert!(doc.is_reduced());
 

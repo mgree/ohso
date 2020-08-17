@@ -34,11 +34,8 @@ use std::convert::TryFrom;
 /// A `Doc` is "reduced" when there isn't a top-level `Above` or `Beside`.
 ///
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#Doc.
-#[derive(Clone, Debug)]
-pub(crate) enum Doc<A>
-where
-    A: Clone,
-{
+#[derive(Debug)]
+pub(crate) enum Doc<A> {
     Empty,
     NilAbove(Box<Doc<A>>),
     TextBeside(Annot<A>, Box<Doc<A>>),
@@ -56,10 +53,7 @@ where
 /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#AnnotDetails.
 /// OPT MMG with a lifetime parameter, we can keep annotations by reference
 #[derive(Clone, Debug)]
-pub enum Annot<A>
-where
-    A: Clone,
-{
+pub enum Annot<A> {
     Start,
     Text(Text, isize),
     End(A),
@@ -171,12 +165,10 @@ impl<A: Clone> Doc<A> {
     fn mk_beside(&self, space: bool, d2: Self) -> Self {
         match self {
             Doc::NoDoc => Doc::NoDoc,
-            Doc::Union(d11, d12) => {
-                Doc::Union(
-                    Box::new(d11.mk_beside(space, d2.clone())),
-                    Box::new(d12.mk_beside(space, d2)),
-                )
-            }
+            Doc::Union(d11, d12) => Doc::Union(
+                Box::new(d11.mk_beside(space, d2.clone())),
+                Box::new(d12.mk_beside(space, d2)),
+            ),
             Doc::Empty => d2,
             Doc::Nest(i, d1) => Doc::Nest(*i, Box::new(d1.mk_beside(space, d2))),
             Doc::Beside(d11, b, d12) if *b == space => {
@@ -514,20 +506,53 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    pub fn as_reduced(&self) -> Self {
-        // OPT MMG TODO if mk_beside and above are by reference, then we can avoid explicit cloning
-        match self {
-            Doc::Beside(d1, b, d2) => d1.clone().mk_beside(*b, d2.as_reduced()),
-            Doc::Above(d1, b, d2) => d1.above(*b, d2.as_reduced()),
-            d => d.clone(),
-        }
-    }
-
     pub fn is_reduced(&self) -> bool {
         match self {
             Doc::Beside(_, _, _) => false,
             Doc::Above(_, _, _) => false,
             _ => true,
+        }
+    }
+}
+
+enum ReduceCont<'a, A: Clone> {
+    Beside { d1: &'a Doc<A>, b: bool },
+    Above { d1: &'a Doc<A>, b: bool },
+}
+
+impl<A: Clone> Doc<A> {
+    pub fn as_reduced<'a>(&'a self) -> Self {
+        // OPT MMG TODO if mk_beside and above are by reference, then we can avoid explicit cloning
+        use ReduceCont::*;
+
+        let mut stack: Vec<ReduceCont<'a, A>> = Vec::new();
+        let mut doc = self;
+
+        loop {
+            match doc {
+                Doc::Beside(d1, b, d2) => {
+                    stack.push(Beside { d1, b: *b });
+                    doc = d2;
+                }
+                Doc::Above(d1, b, d2) => {
+                    stack.push(Above { d1, b: *b });
+                    doc = d2;
+                }
+                _ => {
+                    let mut out = doc.clone();
+                    loop {
+                        match stack.pop() {
+                            None => return out,
+                            Some(Above { d1, b }) => {
+                                out = d1.above(b, out);
+                            }
+                            Some(Beside { d1, b }) => {
+                                out = d1.mk_beside(b, out);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -720,6 +745,89 @@ impl<A: Clone> Doc<A> {
                 Box::new(d2),
             ),
             d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
+        }
+    }
+}
+
+enum CloneCont<'a, A> {
+    NilAbove,
+    TextBeside { ann: Annot<A> },
+    Nest { i: isize },
+    UnionR { d2: &'a Doc<A> },
+    UnionL { d1: Box<Doc<A>> },
+    BesideR { d2: &'a Doc<A>, b: bool },
+    BesideL { d1: Box<Doc<A>>, b: bool },
+    AboveR { d2: &'a Doc<A>, b: bool },
+    AboveL { d1: Box<Doc<A>>, b: bool },
+}
+
+impl<A: Clone> Clone for Doc<A> {
+    fn clone<'a>(&'a self) -> Self {
+        use CloneCont::*;
+        let mut stack: Vec<CloneCont<'a, A>> = Vec::new();
+        let mut doc = self;
+
+        'clone: loop {
+            match doc {
+                Doc::Empty | Doc::NoDoc => {
+                    let mut out = Box::new(if doc.is_empty() {
+                        Doc::Empty
+                    } else {
+                        Doc::NoDoc
+                    });
+
+                    loop {
+                        match stack.pop() {
+                            None => return *out,
+                            Some(NilAbove) => out = Box::new(Doc::NilAbove(out)),
+                            Some(TextBeside { ann }) => out = Box::new(Doc::TextBeside(ann, out)),
+                            Some(Nest { i }) => out = Box::new(Doc::Nest(i, out)),
+                            Some(UnionR { d2 }) => {
+                                stack.push(UnionL { d1: out });
+                                doc = d2;
+                                continue 'clone;
+                            }
+                            Some(UnionL { d1 }) => out = Box::new(Doc::Union(d1, out)),
+                            Some(BesideR { d2, b }) => {
+                                stack.push(BesideL { d1: out, b });
+                                doc = d2;
+                                continue 'clone;
+                            }
+                            Some(BesideL { d1, b }) => out = Box::new(Doc::Beside(d1, b, out)),
+                            Some(AboveR { d2, b }) => {
+                                stack.push(AboveL { d1: out, b });
+                                doc = d2;
+                                continue 'clone;
+                            }
+                            Some(AboveL { d1, b }) => out = Box::new(Doc::Above(d1, b, out)),
+                        }
+                    }
+                }
+                Doc::NilAbove(d) => {
+                    stack.push(NilAbove);
+                    doc = d;
+                }
+                Doc::TextBeside(ann, d) => {
+                    stack.push(TextBeside { ann: ann.clone() });
+                    doc = d;
+                }
+                Doc::Nest(i, d) => {
+                    stack.push(Nest { i: *i });
+                    doc = d;
+                }
+                Doc::Union(d1, d2) => {
+                    stack.push(UnionR { d2 });
+                    doc = d1;
+                }
+                Doc::Beside(d1, b, d2) => {
+                    stack.push(BesideR { b: *b, d2 });
+                    doc = d1;
+                }
+                Doc::Above(d1, b, d2) => {
+                    stack.push(AboveR { b: *b, d2 });
+                    doc = d1;
+                }
+            }
         }
     }
 }
