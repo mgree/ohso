@@ -512,6 +512,15 @@ impl<A: Clone> Doc<A> {
         }
     }
 
+    pub fn as_reduced(&self) -> Self {
+        // OPT MMG TODO if mk_beside and above are by reference, then we can avoid explicit cloning
+        match self {
+            Doc::Beside(d1, b, d2) => d1.clone().mk_beside(*b, d2.as_reduced().clone()),
+            Doc::Above(d1, b, d2) => d1.clone().above(*b, d2.as_reduced().clone()),
+            d => d.clone(),
+        }
+    }
+
     pub fn is_reduced(&self) -> bool {
         match self {
             Doc::Beside(_, _, _) => false,

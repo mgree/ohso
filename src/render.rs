@@ -221,7 +221,7 @@ impl<A: Clone> Doc<A> {
         F: FnMut(&Annot<A>) -> (),
     {
         // OPT MMG ugh, this clone :(
-        let doc = &self.0.clone().reduce();
+        let doc = &self.0.as_reduced();
         assert!(doc.is_reduced());
 
         match style.mode {
@@ -236,7 +236,7 @@ impl<A: Clone> Doc<A> {
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as isize;
 
                 eprintln!("calculating layout");
-                let doc = doc.best_redo(line_length, ribbon_length);
+                let doc = doc.best(line_length, ribbon_length);
 
                 eprintln!("calculated layout, displaying");
                 doc.display(style, ribbon_length, txt);
