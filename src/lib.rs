@@ -447,7 +447,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn huge_text() {
         // anything bigger overflows 8MB stack
         let t = vec!["hi"; 1020];
@@ -466,13 +465,13 @@ mod tests {
             doc.render(&Style {
                 mode: Mode::Left,
                 ..Style::default()
-            }).0,
+            })
+            .0,
             t.join("\n").to_string()
         )
     }
 
     #[test]
-    #[ignore] // overflowing on freebsd
     fn huge_text_oneline() {
         // anything bigger overflows 8MB stack
         let t = vec!["hi"; 4837];
@@ -482,14 +481,13 @@ mod tests {
             doc.render(&Style {
                 mode: Mode::OneLine,
                 ..Style::default()
-            }).0,
+            })
+            .0,
             t.join(" ").to_string()
         )
     }
 
-
     #[test]
-    #[ignore]
     fn enormous_text() {
         let t = vec!["hi"; 2000];
 
