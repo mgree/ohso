@@ -334,37 +334,20 @@ impl<A: Clone> Doc<A> {
     where
         I: IntoIterator<Item = Self>,
     {
-        let mut docs = docs.into_iter();
-        let mut d1 = match docs.next() {
-            None => return Doc::Empty,
-            Some(d) => d,
-        };
+        let mut d1 = Doc::Empty;
+        for d2 in docs.into_iter() {
+            if d1.is_empty() {
+                d1 = d2.reduce_vert();
+            } else {
+                let d2 = d2.reduce_vert();
 
-        for d2 in docs {
-            d1 = Doc::Above(Box::new(d1), false, Box::new(d2)); // OPT MMG? d1.above(false, d2)
-        }
-
-        d1.reduce_vert()
-    }
-
-    fn reduce_vert(self) -> Self {
-        match self {
-            Doc::Above(d1, b, d2) => {
-                if d1.is_empty() {
-                    *d2
-                } else {
-                    let d1 = d1.reduce_vert();
-                    let d2 = d2.reduce_vert();
-
-                    if d2.is_empty() {
-                        d1
-                    } else {
-                        Doc::Above(Box::new(d1), b, Box::new(d2))
-                    }
+                if !d2.is_empty() {
+                    d1 = Doc::Above(Box::new(d1), false, Box::new(d2));
                 }
             }
-            d => d,
         }
+
+        d1
     }
 
     pub fn fill<I>(docs: I, spaces: bool) -> Self
@@ -528,6 +511,56 @@ impl<A: Clone> Doc<A> {
             d => d,
         }
     }
+
+    pub fn is_reduced(&self) -> bool {
+        match self {
+            Doc::Beside(_, _, _) => false,
+            Doc::Above(_, _, _) => false,
+            _ => true,
+        }
+    }
+}
+
+enum ReduceVertCont<A: Clone> {
+    AboveL { d1: Doc<A>, b: bool },
+    AboveR { d2: Doc<A>, b: bool },
+}
+
+impl<A: Clone> Doc<A> {
+    fn reduce_vert(self) -> Self {
+        use ReduceVertCont::*;
+        let mut doc = self;
+        let mut stack: Vec<ReduceVertCont<A>> = Vec::new();
+
+        loop {
+            match doc {
+                Doc::Above(d1, b, d2) => {
+                    doc = *d2;
+                    if !d1.is_empty() {
+                        stack.push(AboveL { d1: *d1, b })
+                    }
+                }
+                d => {
+                    let mut inner_doc = d;
+                    'build: loop {
+                        match stack.pop() {
+                            None => return inner_doc,
+                            Some(AboveL { d1, b }) => {
+                                if !inner_doc.is_empty() {
+                                    stack.push(AboveR { d2: inner_doc, b });
+                                }
+                                doc = d1;
+                                break 'build;
+                            }
+                            Some(AboveR { d2, b }) => {
+                                inner_doc = Doc::Above(Box::new(inner_doc), b, Box::new(d2));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 enum AboveCont<A: Clone> {
@@ -539,7 +572,7 @@ impl<A: Clone> Doc<A> {
     pub fn above(self, space: bool, d2: Self) -> Self {
         use AboveCont::*;
 
-        let mut stack: Vec<AboveCont<A>> = vec![];
+        let mut stack: Vec<AboveCont<A>> = Vec::new();
         let mut d1 = self;
         let mut d2 = d2;
         let mut space = space;
@@ -589,7 +622,7 @@ impl<A: Clone> Doc<A> {
     pub fn above_nest(self, space: bool, i: isize, d2: Self) -> Self {
         use AboveNestCont::*;
 
-        let mut stack: Vec<AboveNestCont<A>> = vec![];
+        let mut stack: Vec<AboveNestCont<A>> = Vec::new();
         let mut d1 = self;
         let mut d2 = d2;
         let mut i = i;

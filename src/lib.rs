@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn huge_text_oneline() {
         // anything bigger overflows 8MB stack
-        let t = vec!["hi"; 1815];
+        let t = vec!["hi"; 4837];
 
         let doc = PlainDoc::vcat(t.clone());
         assert_eq!(

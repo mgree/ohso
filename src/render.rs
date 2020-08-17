@@ -222,6 +222,7 @@ impl<A: Clone> Doc<A> {
     {
         // OPT MMG ugh, this clone :(
         let doc = self.0.clone().reduce();
+
         match style.mode {
             Mode::OneLine => doc.easy_display(Annot::space(), Policy::Second, txt),
             Mode::Left => doc.easy_display(Annot::newline(), Policy::First, txt),
@@ -255,7 +256,7 @@ impl<A: Clone> D<A> {
     where
         F: FnMut(&Annot<A>) -> (),
     {
-        let mut stack: Vec<&Annot<A>> = vec![];
+        let mut stack: Vec<&Annot<A>> = Vec::new();
         let mut doc = self;
 
         loop {
@@ -394,7 +395,7 @@ enum BestCont<A: Clone> {
 impl<A: Clone> D<A> {
     pub fn best(self, line_length: isize, ribbon_length: isize) -> Self {
         use BestCont::*;
-        let mut stack: Vec<BestCont<A>> = vec![];
+        let mut stack: Vec<BestCont<A>> = Vec::new();
 
         let mut line_length = line_length;
         let mut doc = self;
@@ -432,7 +433,7 @@ impl<A: Clone> D<A> {
                     let mut sl = ann.size();
                     stack.push(TextBeside(ann));
 
-                    let mut inner_stack: Vec<BestCont<A>> = vec![];
+                    let mut inner_stack: Vec<BestCont<A>> = Vec::new();
                     let mut inner_doc = *d;
                     'best1: loop {
                         match inner_doc {
@@ -537,7 +538,7 @@ impl<A: Clone> D<A> {
         F: FnMut(&Annot<A>) -> (),
     {
         use LayCont::*;
-        let mut stack: Vec<LayCont<'a, A>> = vec![];
+        let mut stack: Vec<LayCont<'a, A>> = Vec::new();
         let mut doc = self;
         let mut k = k;
 
@@ -601,7 +602,7 @@ impl<A: Clone> D<A> {
                     stack.push(Ann { ann, indent: k });
                     k = k + ann.size();
 
-                    let mut inner_stack: Vec<LayCont<'a, A>> = vec![];
+                    let mut inner_stack: Vec<LayCont<'a, A>> = Vec::new();
                     let mut inner_doc = d.as_ref();
                     'lay2: loop {
                         match inner_doc {
