@@ -466,7 +466,8 @@ mod tests {
             doc.render(&Style {
                 mode: Mode::Left,
                 ..Style::default()
-            }).0,
+            })
+            .0,
             t.join("\n").to_string()
         )
     }
@@ -482,11 +483,11 @@ mod tests {
             doc.render(&Style {
                 mode: Mode::OneLine,
                 ..Style::default()
-            }).0,
+            })
+            .0,
             t.join(" ").to_string()
         )
     }
-
 
     #[test]
     #[ignore]
