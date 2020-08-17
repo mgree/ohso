@@ -272,17 +272,7 @@ impl<A: Clone> Doc<A> {
     where
         I: IntoIterator<Item = Self>,
     {
-        let mut docs = docs.into_iter();
-        let mut d1 = match docs.next() {
-            None => return Doc::Empty,
-            Some(d) => d,
-        };
-
-        for d2 in docs {
-            d1 = Doc::Beside(Box::new(d1), true, Box::new(d2));
-        }
-
-        d1.reduce_horiz()
+        Doc::hjoin(docs, true)
     }
 
     /// Like `append`, but for a list of documents.
@@ -290,17 +280,27 @@ impl<A: Clone> Doc<A> {
     where
         I: IntoIterator<Item = Self>,
     {
-        let mut docs = docs.into_iter();
-        let mut d1 = match docs.next() {
-            None => return Doc::Empty,
-            Some(d) => d,
-        };
+        Doc::hjoin(docs, false)
+    }
 
-        for d2 in docs {
-            d1 = Doc::Beside(Box::new(d1), false, Box::new(d2));
+    fn hjoin<I>(docs: I, space: bool) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        let mut d1 = Doc::Empty;
+        for d2 in docs.into_iter() {
+            if d1.is_empty() {
+                d1 = d2.reduce_horiz();
+            } else {
+                let d2 = d2.reduce_horiz();
+
+                if !d2.is_empty() {
+                    d1 = Doc::Beside(Box::new(d1), space, Box::new(d2));
+                }
+            }
         }
 
-        d1.reduce_horiz()
+        return d1;
     }
 
     /// Like `over`, but for a list.
