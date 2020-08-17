@@ -168,23 +168,25 @@ impl<A: Clone> Doc<A> {
     }
 
     /// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#beside
-    fn mk_beside(self, space: bool, d2: Self) -> Self {
+    fn mk_beside(&self, space: bool, d2: Self) -> Self {
         match self {
             Doc::NoDoc => Doc::NoDoc,
-            Doc::Union(d11, d12) => Doc::Union(
-                Box::new(d11.mk_beside(space, d2.clone())),
-                Box::new(d12.mk_beside(space, d2)),
-            ),
+            Doc::Union(d11, d12) => {
+                Doc::Union(
+                    Box::new(d11.mk_beside(space, d2.clone())),
+                    Box::new(d12.mk_beside(space, d2)),
+                )
+            }
             Doc::Empty => d2,
-            Doc::Nest(i, d1) => Doc::Nest(i, Box::new(d1.mk_beside(space, d2))),
-            Doc::Beside(d11, b, d12) if b == space => {
+            Doc::Nest(i, d1) => Doc::Nest(*i, Box::new(d1.mk_beside(space, d2))),
+            Doc::Beside(d11, b, d12) if *b == space => {
                 d11.mk_beside(space, d12.mk_beside(space, d2))
             }
-            d1 @ Doc::Beside(..) => d1.reduce().mk_beside(space, d2),
-            d1 @ Doc::Above(..) => d1.reduce().mk_beside(space, d2),
+            d1 @ Doc::Beside(..) => d1.as_reduced().mk_beside(space, d2),
+            d1 @ Doc::Above(..) => d1.as_reduced().mk_beside(space, d2),
             Doc::NilAbove(d1) => Doc::NilAbove(Box::new(d1.mk_beside(space, d2))),
             Doc::TextBeside(ann, d1) => Doc::TextBeside(
-                ann,
+                ann.clone(),
                 Box::new(if d1.is_empty() {
                     Doc::nil_beside(space, d2)
                 } else {
@@ -515,8 +517,8 @@ impl<A: Clone> Doc<A> {
     pub fn as_reduced(&self) -> Self {
         // OPT MMG TODO if mk_beside and above are by reference, then we can avoid explicit cloning
         match self {
-            Doc::Beside(d1, b, d2) => d1.clone().mk_beside(*b, d2.as_reduced().clone()),
-            Doc::Above(d1, b, d2) => d1.clone().above(*b, d2.as_reduced().clone()),
+            Doc::Beside(d1, b, d2) => d1.clone().mk_beside(*b, d2.as_reduced()),
+            Doc::Above(d1, b, d2) => d1.above(*b, d2.as_reduced()),
             d => d.clone(),
         }
     }
@@ -572,47 +574,51 @@ impl<A: Clone> Doc<A> {
     }
 }
 
-enum AboveCont<A: Clone> {
-    Above(Doc<A>, bool),
+enum AboveCont<'a, A: Clone> {
+    Above(&'a Doc<A>, bool),
 }
 
 impl<A: Clone> Doc<A> {
     /// Put one `Doc` above another.
-    pub fn above(self, space: bool, d2: Self) -> Self {
+    pub fn above<'a>(&'a self, space: bool, d2: Self) -> Self {
         use AboveCont::*;
 
-        let mut stack: Vec<AboveCont<A>> = Vec::new();
+        let mut stack: Vec<AboveCont<'a, A>> = Vec::new();
         let mut d1 = self;
         let mut d2 = d2;
         let mut space = space;
 
         loop {
-            match (d1, d2) {
-                (Doc::Empty, d) | (d, Doc::Empty) => 'build: loop {
+            if d1.is_empty() || d2.is_empty() {
+                let out = if d1.is_empty() { d2 } else { d1.clone() };
+
+                'build: loop {
                     match stack.pop() {
-                        None => return d,
+                        None => return out,
                         Some(Above(new_d1, b)) => {
-                            d2 = d;
+                            d2 = out;
                             d1 = new_d1;
                             space = b;
                             break 'build;
                         }
                     }
-                },
-                (Doc::Above(d11, b, d12), d3) => {
-                    stack.push(Above(*d11, b));
-                    d1 = *d12;
-                    d2 = d3;
                 }
-                (d1i, d2i) => {
+            }
+
+            match d1 {
+                Doc::Above(d11, b, d12) => {
+                    stack.push(Above(d11, *b));
+                    d1 = d12;
+                }
+                d1i => {
                     let d1r = match d1i {
-                        d1 @ Doc::Beside(..) => d1.reduce(),
-                        d1 => d1,
+                        d1 @ Doc::Beside(..) => d1.as_reduced(),
+                        d1 => d1.clone(),
                     };
 
                     // trigger first case above
-                    d1 = d1r.above_nest(space, 0, d2i.reduce());
-                    d2 = Doc::Empty;
+                    d1 = &Doc::Empty;
+                    d2 = d1r.above_nest(space, 0, d2.as_reduced());
                 }
             }
         }
