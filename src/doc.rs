@@ -303,26 +303,6 @@ impl<A: Clone> Doc<A> {
         d1.reduce_horiz()
     }
 
-    fn reduce_horiz(self) -> Self {
-        match self {
-            Doc::Beside(d1, b, d2) => {
-                if d1.is_empty() {
-                    *d2
-                } else {
-                    let d1 = d1.reduce_horiz();
-                    let d2 = d2.reduce_horiz();
-
-                    if d2.is_empty() {
-                        d1
-                    } else {
-                        Doc::Beside(Box::new(d1), b, Box::new(d2))
-                    }
-                }
-            }
-            d => d,
-        }
-    }
-
     /// Like `over`, but for a list.
     pub fn vcat<I>(docs: I) -> Self
     where
@@ -590,6 +570,48 @@ impl<A: Clone> Doc<A> {
                             }
                             Some(AboveR { d2, b }) => {
                                 inner_doc = Doc::Above(Box::new(inner_doc), b, Box::new(d2));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+enum ReduceHorizCont<A: Clone> {
+    BesideL { d1: Doc<A>, b: bool },
+    BesideR { d2: Doc<A>, b: bool },
+}
+
+impl<A: Clone> Doc<A> {
+    fn reduce_horiz(self) -> Self {
+        use ReduceHorizCont::*;
+        let mut doc = self;
+        let mut stack: Vec<ReduceHorizCont<A>> = Vec::new();
+
+        loop {
+            match doc {
+                Doc::Beside(d1, b, d2) => {
+                    doc = *d2;
+                    if !d1.is_empty() {
+                        stack.push(BesideL { d1: *d1, b })
+                    }
+                }
+                d => {
+                    let mut inner_doc = d;
+                    'build: loop {
+                        match stack.pop() {
+                            None => return inner_doc,
+                            Some(BesideL { d1, b }) => {
+                                if !inner_doc.is_empty() {
+                                    stack.push(BesideR { d2: inner_doc, b });
+                                }
+                                doc = d1;
+                                break 'build;
+                            }
+                            Some(BesideR { d2, b }) => {
+                                inner_doc = Doc::Beside(Box::new(inner_doc), b, Box::new(d2));
                             }
                         }
                     }

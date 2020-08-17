@@ -420,7 +420,7 @@ impl<A: Clone> D<A> {
                 (_, D::Empty) | (_, D::NoDoc) => {
                     let mut out = doc.clone();
 
-                    'build: loop {
+                    loop {
                         match stack.pop() {
                             None => return out,
                             Some(NilAbove { old_line_length }) => {
