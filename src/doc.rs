@@ -337,9 +337,9 @@ impl<A: Clone> Doc<A> {
         let mut d1 = Doc::Empty;
         for d2 in docs.into_iter() {
             if d1.is_empty() {
-                d1 = d2.reduce_vert();
+                d1 = d2.reduce_vert(); // OPT MMG is this still necessary?
             } else {
-                let d2 = d2.reduce_vert();
+                let d2 = d2.reduce_vert(); // OPT MMG is this still necessary?
 
                 if !d2.is_empty() {
                     d1 = Doc::Above(Box::new(d1), false, Box::new(d2));

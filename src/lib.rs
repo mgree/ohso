@@ -472,6 +472,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // overflowing on freebsd
     fn huge_text_oneline() {
         // anything bigger overflows 8MB stack
         let t = vec!["hi"; 4837];
