@@ -765,9 +765,23 @@ impl<A: Clone> Doc<A> {
     }
 }
 
-// TODO really, we need a single, combined loop (like we did for `best`)
+// IDEA a single, combined loop (like for `best`)
 //
 // reduce, mk_beside, above
+//
+// tricky case is `(Beside {..} | Above {..}).mk_beside(..)`, which reduces its
+// lhs and then makes a recursive call
+//
+// the reduction necessarily allocates, so it returns an owned type... but then the recursive call doesn't want that!
+// 
+// so maybe that plan doesn't quite work.
+//
+// at this point, the best way forward seems to be: loopify mk_beside (just to save the stack)
+// change render to use std::io::Write
+// write some real-world examples
+// profile to see where we can save
+//
+// my current suspicion is that laziness is a key driver here, and to match the original library we'll need to do that... manually :(
 #[allow(dead_code)]
 enum BesideCont<'a, A: Clone> {
     UnionR { d12: &'a Doc<A>, d2: Doc<A> },
