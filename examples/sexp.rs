@@ -19,18 +19,7 @@ impl Pretty<()> for &SExp {
     fn to_doc(self) -> Doc<()> {
         match self {
             SExp::Atom(a) => a.clone().to_doc(),
-            SExp::Apply(xs) => {
-                let mut xs = xs.into_iter();
-
-                let fun = match xs.next() {
-                    None => Doc::empty().parens(),
-                    Some(e) => e.to_doc().nest(1),
-                };
-
-                let args = Doc::sep(xs.into_iter().map(|x| x.to_doc().nest(2)));
-
-                Doc::sep(vec![fun, args]).parens()
-            }
+            SExp::Apply(xs) => Doc::sep(xs.into_iter().map(|x| x.to_doc().nest(1))).parens(),
         }
     }
 }
@@ -56,7 +45,14 @@ pub fn main() {
             .map(|v| SExp::apply(v.iter().map(|a| SExp::atom(a)))),
     );
 
-    for mode in vec![ohso::Mode::OneLine, ohso::Mode::Left, ohso::Mode::ZigZag, ohso::Mode::Page].into_iter() {
+    for mode in vec![
+        ohso::Mode::OneLine,
+        ohso::Mode::Left,
+        ohso::Mode::ZigZag,
+        ohso::Mode::Page,
+    ]
+    .into_iter()
+    {
         println!("MODE: {}", mode);
         show_for_mode(&e123, mode);
         show_for_mode(&e1to6, mode);

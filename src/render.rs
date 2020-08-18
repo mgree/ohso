@@ -577,6 +577,7 @@ impl<A: Clone> D<A> {
                         }
                         Some(Ann { ann, indent }) => {
                             txt(ann);
+                            eprintln!("indenting {}", indent);
                             txt(&Annot::indent(indent));
                         }
                     }
