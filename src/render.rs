@@ -498,7 +498,7 @@ impl<A: Clone> D<A> {
                     });
                     doc = d1.as_ref();
                 }
-                (mode, D::Above(..)) => panic!("best ({:?} on Above", mode),
+                (mode, D::Above(..)) => panic!("best ({:?}) on Above", mode),
                 (mode, D::Beside(..)) => panic!("best ({:?}) on Beside", mode),
             }
         }

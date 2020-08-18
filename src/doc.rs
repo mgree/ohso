@@ -188,20 +188,6 @@ impl<A: Clone> Doc<A> {
         }
     }
 
-    fn nil_beside(space: bool, d2: Self) -> Self {
-        match d2 {
-            Doc::Empty => Doc::Empty,
-            Doc::Nest(_, d2) => Doc::nil_beside(space, *d2),
-            d2 => {
-                if space {
-                    Doc::TextBeside(Annot::space(), Box::new(d2))
-                } else {
-                    d2
-                }
-            }
-        }
-    }
-
     pub fn sep_x<I>(spaces: bool, docs: I) -> Self
     where
         I: IntoIterator<Item = Self>,
@@ -767,6 +753,55 @@ impl<A: Clone> Doc<A> {
                 Box::new(d2),
             ),
             d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
+        }
+    }
+}
+
+/*
+/// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#beside
+fn mk_beside(&self, space: bool, d2: Self) -> Self {
+    match self {
+        Doc::NoDoc => Doc::NoDoc,
+        Doc::Union(d11, d12) => Doc::Union(
+            Box::new(d11.mk_beside(space, d2.clone())),
+            Box::new(d12.mk_beside(space, d2)),
+        ),
+        Doc::Empty => d2,
+        Doc::Nest(i, d1) => Doc::Nest(*i, Box::new(d1.mk_beside(space, d2))),
+        Doc::Beside(d11, b, d12) if *b == space => {
+            d11.mk_beside(space, d12.mk_beside(space, d2))
+        }
+        d1 @ Doc::Beside(..) => d1.as_reduced().mk_beside(space, d2),
+        d1 @ Doc::Above(..) => d1.as_reduced().mk_beside(space, d2),
+        Doc::NilAbove(d1) => Doc::NilAbove(Box::new(d1.mk_beside(space, d2))),
+        Doc::TextBeside(ann, d1) => Doc::TextBeside(
+            ann.clone(),
+            Box::new(if d1.is_empty() {
+                Doc::nil_beside(space, d2)
+            } else {
+                d1.mk_beside(space, d2)
+            }),
+        ),
+    }
+}
+
+*/
+
+impl<A: Clone> Doc<A> {
+    fn nil_beside(space: bool, d2: Self) -> Self {
+        let mut doc = d2;
+        loop {
+            match doc {
+                Doc::Empty => return Doc::Empty,
+                Doc::Nest(_, d2) => doc = *d2,
+                doc => {
+                    return if space {
+                        Doc::TextBeside(Annot::space(), Box::new(doc))
+                    } else {
+                        doc
+                    }
+                }
+            }
         }
     }
 }
