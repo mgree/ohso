@@ -133,8 +133,7 @@ impl<A: Clone> Doc<A> {
     /// Following
     /// https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#nest.
     pub fn nest(self, i: isize) -> Self {
-        let d = self.reduce();
-        d.mk_nest(i)
+        self.reduce().mk_nest(i)
     }
 
     fn mk_nest(self, i: isize) -> Self {
@@ -745,49 +744,74 @@ impl<A: Clone> Doc<A> {
     }
 
     fn nil_above_nest(space: bool, i: isize, d2: Self) -> Self {
-        match d2 {
-            Doc::Empty => Doc::Empty,
-            Doc::Nest(k, d2) => Doc::nil_above_nest(space, i + k, *d2),
-            d2 if !space && i > 0 => Doc::TextBeside(
-                Annot::indent(isize::try_from(i).expect("positive")),
-                Box::new(d2),
-            ),
-            d2 => Doc::NilAbove(Box::new(d2.mk_nest(i))),
+        let mut doc = d2;
+        let mut i = i;
+        loop {
+            match doc {
+                Doc::Empty => return Doc::Empty,
+                Doc::Nest(k, d2) => {
+                    doc = *d2;
+                    i = i + k;
+                }
+                d2 if !space && i > 0 => {
+                    return Doc::TextBeside(
+                        Annot::indent(isize::try_from(i).expect("positive")),
+                        Box::new(d2),
+                    )
+                }
+                d2 => return Doc::NilAbove(Box::new(d2.mk_nest(i))),
+            }
         }
     }
 }
 
-/*
-/// Following https://hackage.haskell.org/package/pretty-1.1.3.6/docs/src/Text.PrettyPrint.Annotated.HughesPJ.html#beside
-fn mk_beside(&self, space: bool, d2: Self) -> Self {
-    match self {
-        Doc::NoDoc => Doc::NoDoc,
-        Doc::Union(d11, d12) => Doc::Union(
-            Box::new(d11.mk_beside(space, d2.clone())),
-            Box::new(d12.mk_beside(space, d2)),
-        ),
-        Doc::Empty => d2,
-        Doc::Nest(i, d1) => Doc::Nest(*i, Box::new(d1.mk_beside(space, d2))),
-        Doc::Beside(d11, b, d12) if *b == space => {
-            d11.mk_beside(space, d12.mk_beside(space, d2))
-        }
-        d1 @ Doc::Beside(..) => d1.as_reduced().mk_beside(space, d2),
-        d1 @ Doc::Above(..) => d1.as_reduced().mk_beside(space, d2),
-        Doc::NilAbove(d1) => Doc::NilAbove(Box::new(d1.mk_beside(space, d2))),
-        Doc::TextBeside(ann, d1) => Doc::TextBeside(
-            ann.clone(),
-            Box::new(if d1.is_empty() {
-                Doc::nil_beside(space, d2)
-            } else {
-                d1.mk_beside(space, d2)
-            }),
-        ),
-    }
+// TODO really, we need a single, combined loop (like we did for `best`)
+//
+// reduce, mk_beside, above
+#[allow(dead_code)]
+enum BesideCont<'a, A: Clone> {
+    UnionR { d12: &'a Doc<A>, d2: Doc<A> },
+    UnionL { d11: &'a Doc<A> },
+    Nest { i: isize },
+    BesideSameR { d12: &'a Doc<A> },
+    BesideSameL { d11: &'a Doc<A> },
+    NilAbove,
+    TextBeside { ann: Annot<A> },
 }
-
-*/
 
 impl<A: Clone> Doc<A> {
+    /*
+    fn beside_loop<'a>(&'a self, space: bool, d2: Self) -> Self {
+        use BesideCont::*;
+        let mut stack: Vec<BesideCont<'a, A>> = Vec::new();
+        let mut doc = self;
+        let mut d2 = d2;
+
+        'beside: loop {
+            match doc {
+                Doc::Empty | Doc::NoDoc => todo!(),
+                Doc::Nest(i, d1) => {
+                    stack.push(Nest { i: *i });
+                    doc = d1;
+                },
+                Doc::NilAbove(d1) => {
+                    stack.push(NilAbove);
+                    doc = d1;
+                }
+                Doc::TextBeside(ann, d1) => {
+                    stack.push(TextBeside { ann: ann.clone() });
+                    if d1.is_empty() {
+                        d2 = Doc::nil_beside(space, d2);
+                    }
+
+                    doc = d1;
+                }
+                Doc::
+            }
+        }
+    }
+    */
+
     fn nil_beside(space: bool, d2: Self) -> Self {
         let mut doc = d2;
         loop {
@@ -818,7 +842,10 @@ enum CloneCont<'a, A> {
     AboveL { d1: Box<Doc<A>>, b: bool },
 }
 
-impl<A: Clone> Clone for Doc<A> {
+impl<A> Clone for Doc<A>
+where
+    A: Clone,
+{
     fn clone<'a>(&'a self) -> Self {
         use CloneCont::*;
         let mut stack: Vec<CloneCont<'a, A>> = Vec::new();

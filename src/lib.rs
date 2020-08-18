@@ -8,6 +8,7 @@ use std::convert::TryFrom;
 type D<A> = doc::Doc<A>;
 
 /// The type of pretty-printable documents.
+#[derive(Clone)]
 pub struct Doc<A: Clone>(D<A>);
 
 pub trait Pretty<A: Clone> {
@@ -435,6 +436,19 @@ mod tests {
         assert_eq!(
             Doc::cat(PlainDoc::comma().punctuate(vec!["et cetera", "etc", "&c"])).to_string(),
             "et cetera,etc,&c".to_string()
+        );
+    }
+
+    #[test]
+    fn sep_empty() {
+        assert_eq!(
+            PlainDoc::sep(vec![PlainDoc::empty()]).to_string(),
+            "".to_string()
+        );
+
+        assert_eq!(
+            PlainDoc::sep(vec![PlainDoc::empty(); 5]).to_string(),
+            "".to_string()
         );
     }
 
