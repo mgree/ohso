@@ -11,6 +11,7 @@ NB that the original code is under a BSD 3-clause license (see
 # TODO
 
 - [ ] Compare with [Haskell benchmarks](https://github.com/haskell/pretty/blob/master/bench/Bench.hs)
+- [ ] Compare with [Rust benchmarks](https://github.com/Marwes/pretty.rs/blob/master/benches/trees.rs)
 - [ ] Port [Haskell tests](https://github.com/haskell/pretty/tree/master/tests)
 - [ ] Think about keeping annotations by reference
 - [ ] Suite of examples (JSON, IMP, STLC)
