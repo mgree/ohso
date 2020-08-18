@@ -9,3 +9,6 @@ description = "An implementation of the Hughes/Peyton Jones pretty printing libr
 
 [dependencies]
 paste = "1.0"
+
+[[example]]
+name = "sexp"

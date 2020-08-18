@@ -23,6 +23,17 @@ pub enum Mode {
     OneLine,
 }
 
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Mode::Page => write!(f, "Page"),
+            Mode::ZigZag => write!(f, "ZigZag"),
+            Mode::Left => write!(f, "Left"),
+            Mode::OneLine => write!(f, "OneLine"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Style {
     /// The rendering `Mode`.
@@ -103,7 +114,6 @@ impl<A: Clone> Doc<A> {
         // OPT MMG use a rope or something
         let mut output: Vec<(Text, usize)> = Vec::new();
 
-        eprintln!("rendering");
         self.full_render_ann(style, &mut |ann| match ann {
             Annot::Start => {
                 let span = stack.pop().expect("span stack underflow in render");
@@ -121,7 +131,6 @@ impl<A: Clone> Doc<A> {
                 ));
             }
         });
-        eprintln!("rendered");
 
         // fix up start of span
         for span in &mut spans {
@@ -234,12 +243,9 @@ impl<A: Clone> Doc<A> {
                 let ribbon_length: isize =
                     (style.line_length as f32 / style.ribbons_per_line as f32).round() as isize;
 
-                eprintln!("calculating layout");
                 let doc = doc.best(line_length, ribbon_length);
 
-                eprintln!("calculated layout, displaying");
                 doc.display(style, ribbon_length, txt);
-                eprintln!("displayed");
             }
         }
     }
@@ -261,12 +267,12 @@ impl<A: Clone> D<A> {
 
         loop {
             match doc {
-                D::Empty => {
-                    for ann in stack.iter() {
-                        txt(ann);
+                D::Empty => loop {
+                    match stack.pop() {
+                        None => return,
+                        Some(ann) => txt(ann),
                     }
-                    return;
-                }
+                },
                 D::Union(d1, d2) => {
                     doc = match policy {
                         Policy::First => D::first(d1, d2),

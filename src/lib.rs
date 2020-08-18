@@ -309,7 +309,7 @@ impl<A: Clone> Pretty<A> for String {
 
 impl<A: Clone> Pretty<A> for &str {
     fn to_doc(self) -> Doc<A> {
-        Doc::text(self.to_string())
+        Doc::text(self)
     }
 }
 
