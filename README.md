@@ -1,3 +1,5 @@
+This doesn't work, but I learned a lot from it. (Namely: laziness is load-bearing in this approach.)
+
 # ohso
 [![Build Status](https://travis-ci.com/mgree/ohso.svg?branch=main)](https://travis-ci.com/mgree/mgt)
 
